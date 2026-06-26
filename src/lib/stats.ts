@@ -408,58 +408,97 @@ export async function updateCareerStats(matchId: string, retries = 3): Promise<v
     throw lastError;
   }
 
+  // Sort match stats to determine placement points
+  const sortedStats = [...matchStats].sort((a, b) => {
+    const sport = matchStats[0]?.sport;
+    if (sport === 'golf') return a.score - b.score;
+    return b.score - a.score;
+  });
+
   // Process the stats
   const errors: any[] = [];
   for (const stat of matchStats) {
     try {
+      // 1. Calculate Placement Points
+      const rank = sortedStats.findIndex(s => s.profile_id === stat.profile_id) + 1;
+      let placementSP = 10; // Completion Bonus
+      if (rank === 1) placementSP = 100;
+      else if (rank === 2) placementSP = 50;
+      else if (rank === 3) placementSP = 25;
+
+      // 2. Calculate Milestones
+      let milestoneSP = 0;
+      if (stat.sport === 'chip_off') {
+        const hioCount = (stat.extra_stats.tens as number) || 0;
+        milestoneSP += hioCount * 50;
+      } else if (stat.sport === 'cricket') {
+        if (stat.score >= 50) milestoneSP += 50;
+        if ((stat.extra_stats.wickets as number) >= 3) milestoneSP += 30;
+      } else if (stat.sport === 'golf') {
+        const hioCount = (stat.extra_stats.hio as number) || 0;
+        milestoneSP += hioCount * 50;
+      }
+
+      const totalSP = placementSP + milestoneSP;
+
       // Get existing career stats
-    const { data: existing } = await supabase
-      .from('player_career_stats')
-      .select('*')
-      .eq('profile_id', stat.profile_id)
-      .eq('sport', stat.sport)
-      .maybeSingle();
-
-    if (existing) {
-      // Merge extra_stats
-      const newExtra = { ...existing.extra_stats };
-      Object.keys(stat.extra_stats).forEach(key => {
-        if (typeof stat.extra_stats[key] === 'number') {
-          newExtra[key] = (newExtra[key] || 0) + stat.extra_stats[key];
-        } else {
-          newExtra[key] = stat.extra_stats[key];
-        }
-      });
-
-      await supabase
+      const { data: existing } = await supabase
         .from('player_career_stats')
-        .update({
-          matches_played: existing.matches_played + 1,
-          matches_won: existing.matches_won + (stat.is_winner ? 1 : 0),
-          matches_lost: existing.matches_lost + (stat.is_winner ? 0 : 1),
-          total_score: existing.total_score + stat.score,
-          best_score: existing.best_score === null ? stat.score : 
-                      (stat.sport === 'golf' 
-                        ? (stat.score > 0 ? Math.min(existing.best_score, stat.score) : existing.best_score)
-                        : Math.max(existing.best_score, stat.score)),
-          extra_stats: newExtra,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id);
-    } else {
-      await supabase
-        .from('player_career_stats')
-        .insert({
-          profile_id: stat.profile_id,
-          sport: stat.sport,
-          matches_played: 1,
-          matches_won: stat.is_winner ? 1 : 0,
-          matches_lost: stat.is_winner ? 0 : 1,
-          total_score: stat.score,
-          best_score: stat.score,
-          extra_stats: stat.extra_stats,
+        .select('*')
+        .eq('profile_id', stat.profile_id)
+        .eq('sport', stat.sport)
+        .maybeSingle();
+
+      if (existing) {
+        // Merge extra_stats
+        const newExtra = { ...existing.extra_stats };
+        Object.keys(stat.extra_stats).forEach(key => {
+          if (typeof stat.extra_stats[key] === 'number') {
+            newExtra[key] = (newExtra[key] || 0) + stat.extra_stats[key];
+          } else {
+            newExtra[key] = stat.extra_stats[key];
+          }
         });
-    }
+
+        await supabase
+          .from('player_career_stats')
+          .update({
+            matches_played: (existing.matches_played || 0) + 1,
+            matches_won: (existing.matches_won || 0) + (stat.is_winner ? 1 : 0),
+            matches_lost: (existing.matches_lost || 0) + (stat.is_winner ? 0 : 1),
+            total_score: (existing.total_score || 0) + stat.score,
+            best_score: existing.best_score === null ? stat.score : 
+                        (stat.sport === 'golf' 
+                          ? (stat.score > 0 ? Math.min(existing.best_score, stat.score) : existing.best_score)
+                          : Math.max(existing.best_score, stat.score)),
+            season_points: (existing.season_points || 0) + totalSP,
+            cricket_lifetime_runs: (existing.cricket_lifetime_runs || 0) + (stat.sport === 'cricket' ? stat.score : 0),
+            cricket_lifetime_wickets: (existing.cricket_lifetime_wickets || 0) + (stat.sport === 'cricket' ? (stat.extra_stats.wickets || 0) : 0),
+            golf_lifetime_points: (existing.golf_lifetime_points || 0) + (stat.sport === 'chip_off' ? stat.score : 0),
+            golf_lifetime_hio: (existing.golf_lifetime_hio || 0) + (stat.sport === 'golf' || stat.sport === 'chip_off' ? (stat.extra_stats.hio || stat.extra_stats.tens || 0) : 0),
+            extra_stats: newExtra,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('player_career_stats')
+          .insert({
+            profile_id: stat.profile_id,
+            sport: stat.sport,
+            matches_played: 1,
+            matches_won: stat.is_winner ? 1 : 0,
+            matches_lost: stat.is_winner ? 0 : 1,
+            total_score: stat.score,
+            best_score: stat.score,
+            season_points: totalSP,
+            cricket_lifetime_runs: stat.sport === 'cricket' ? stat.score : 0,
+            cricket_lifetime_wickets: stat.sport === 'cricket' ? (stat.extra_stats.wickets || 0) : 0,
+            golf_lifetime_points: stat.sport === 'chip_off' ? stat.score : 0,
+            golf_lifetime_hio: stat.sport === 'golf' || stat.sport === 'chip_off' ? (stat.extra_stats.hio || stat.extra_stats.tens || 0) : 0,
+            extra_stats: stat.extra_stats,
+          });
+      }
     } catch (err) {
       console.error(`Failed to update career stats for profile ${stat.profile_id}:`, err);
       errors.push(err);

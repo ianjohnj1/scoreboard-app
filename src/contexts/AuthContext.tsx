@@ -12,8 +12,10 @@ type AuthContextType = {
   currentUser: Profile | null;
   sessionId: string | null;
   loading: boolean;
+  connectionError: boolean;
   login: (profile: Profile) => Promise<void>;
   logout: () => Promise<void>;
+  retryConnection: () => Promise<void>;
   isAdmin: boolean;
 };
 
@@ -23,56 +25,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState(false);
 
-  // Load from localStorage on mount and ensure session exists
-  useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const storedUser = localStorage.getItem('sk_user');
-        const storedSession = localStorage.getItem('sk_session_id');
+  const initializeAuth = useCallback(async () => {
+    setLoading(true);
+    setConnectionError(false);
+    try {
+      // Perform a lightweight "ping" to verify DNS/Connectivity
+      const { error: pingError } = await supabase
+        .from('profiles')
+        .select('count', { count: 'exact', head: true });
+      
+      if (pingError && (pingError.message?.includes('Failed to fetch') || pingError.code === 'PGRST301')) {
+        throw new Error('Supabase unreachable');
+      }
 
-        if (storedUser) {
-          const profile = JSON.parse(storedUser);
-          setCurrentUser(profile);
-          
-          // If we have a user but no session, or to ensure session is still valid
-          if (profile.id) {
-            const { data: session } = await supabase
+      const storedUser = localStorage.getItem('sk_user');
+      const storedSession = localStorage.getItem('sk_session_id');
+
+      if (storedUser) {
+        const profile = JSON.parse(storedUser);
+        setCurrentUser(profile);
+        
+        if (profile.id) {
+          const { data: session } = await supabase
+            .from('active_sessions')
+            .select('id')
+            .eq('profile_id', profile.id)
+            .maybeSingle();
+
+          if (session) {
+            setSessionId(session.id);
+            localStorage.setItem('sk_session_id', session.id);
+          } else {
+            const { data: newSession } = await supabase
               .from('active_sessions')
-              .select('id')
-              .eq('profile_id', profile.id)
-              .maybeSingle();
+              .insert({
+                profile_id: profile.id,
+                last_seen: new Date().toISOString(),
+              })
+              .select()
+              .single();
 
-            if (session) {
-              setSessionId(session.id);
-              localStorage.setItem('sk_session_id', session.id);
-            } else {
-              // Create new session if none exists
-              const { data: newSession } = await supabase
-                .from('active_sessions')
-                .insert({
-                  profile_id: profile.id,
-                  last_seen: new Date().toISOString(),
-                })
-                .select()
-                .single();
-
-              if (newSession) {
-                setSessionId(newSession.id);
-                localStorage.setItem('sk_session_id', newSession.id);
-              }
+            if (newSession) {
+              setSessionId(newSession.id);
+              localStorage.setItem('sk_session_id', newSession.id);
             }
           }
         }
-      } catch (err) {
-        console.warn('Failed to initialize auth session:', err);
-      } finally {
-        setLoading(false);
       }
-    };
-
-    initializeAuth();
+    } catch (err: any) {
+      console.warn('Auth initialization failed:', err);
+      // Catch net::ERR_NAME_NOT_RESOLVED (TypeError: Failed to fetch)
+      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError' || err.message === 'Supabase unreachable') {
+        setConnectionError(true);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  // Load from localStorage on mount and ensure session exists
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
+  const retryConnection = useCallback(async () => {
+    await initializeAuth();
+  }, [initializeAuth]);
 
   const login = useCallback(async (profile: Profile) => {
     setCurrentUser(profile);
@@ -142,8 +162,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentUser,
         sessionId,
         loading,
+        connectionError,
         login,
         logout,
+        retryConnection,
         isAdmin: currentUser?.is_admin ?? false,
       }}
     >

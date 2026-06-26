@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Zap, RotateCcw } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import BottomNav from './components/BottomNav';
 
@@ -27,8 +28,32 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
 }
 
 function AppRoutes() {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, connectionError, retryConnection } = useAuth();
   const location = useLocation();
+
+  if (connectionError) {
+    return (
+      <div className="min-h-screen bg-charcoal-900 flex items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-charcoal-800 border border-charcoal-700 rounded-2xl p-8 shadow-2xl">
+          <div className="w-16 h-16 bg-danger-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Zap size={32} className="text-danger-400" />
+          </div>
+          <h2 className="text-white text-2xl font-bold mb-3">Service Unavailable</h2>
+          <p className="text-charcoal-400 mb-8 leading-relaxed">
+            We're having trouble connecting to the scoreboard servers. 
+            Please check your internet connection and try again.
+          </p>
+          <button
+            onClick={retryConnection}
+            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+          >
+            <RotateCcw size={18} />
+            Reconnect Now
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

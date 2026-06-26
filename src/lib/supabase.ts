@@ -1,7 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase configuration is missing. Please check your .env file.');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: {
@@ -89,6 +93,11 @@ export type PlayerCareerStats = {
   matches_lost: number;
   total_score: number;
   best_score: number | null;
+  season_points: number;
+  cricket_lifetime_runs: number;
+  cricket_lifetime_wickets: number;
+  golf_lifetime_points: number;
+  golf_lifetime_hio: number;
   extra_stats: Record<string, unknown>;
   created_at: string;
   updated_at: string;
