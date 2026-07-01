@@ -21,6 +21,8 @@ export type Profile = {
   is_guest: boolean;
   is_admin: boolean;
   avatar_color: string;
+  avatar_url: string | null;
+  catchphrase: string | null;
   linked_profile_id: string | null;
   created_at: string;
   updated_at: string;
@@ -33,6 +35,7 @@ export type MatchRoom = {
   custom_game_name: string | null;
   match_time: string;
   status: 'active' | 'paused' | 'completed';
+  is_practice: boolean;
   created_by: string | null;
   winner_team_id: string | null;
   winner_profile_id: string | null;
@@ -103,6 +106,34 @@ export type PlayerCareerStats = {
   updated_at: string;
 };
 
+export type PlayerCareerAnalytics = {
+  profile_id: string;
+  sport: string;
+  is_practice: boolean;
+  matches_played: number;
+  matches_won: number;
+  matches_lost: number;
+  total_cricket_runs: number;
+  total_cricket_balls_faced: number;
+  strike_rate: number;
+  dot_ball_percentage: number;
+  boundary_percentage: number;
+  // Bowling stats
+  total_cricket_balls_bowled: number;
+  total_cricket_runs_conceded: number;
+  total_cricket_wickets_taken: number;
+  total_cricket_dots_bowled: number;
+  economy_rate: number;
+  bowling_strike_rate: number;
+  // Chip Off stats
+  total_chip_off_points: number;
+  total_chip_off_chips: number;
+  scoring_efficiency: number;
+  ace_frequency: number;
+  hazard_avoidance_rating: number;
+  average_proximity_tier: number;
+};
+
 export type CricketInnings = {
   id: string;
   match_id: string;
@@ -144,6 +175,7 @@ export type CricketPlayerStats = {
   bat_dismissed_by: string | null;
   bat_fielded_by: string | null;
   bowl_balls: number;
+  bowl_dots: number;
   bowl_maidens: number;
   bowl_runs: number;
   bowl_wickets: number;

@@ -10,6 +10,18 @@ import { supabase } from '../lib/supabase';
 import Avatar from '../components/Avatar';
 import type { Profile, MatchRoom, MatchTeam, MatchPlayer } from '../lib/supabase';
 
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for non-secure contexts (e.g. http:// IP access)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 const SPORTS = [
   { id: 'cricket', label: 'Cricket', icon: '🏏', team: true, desc: 'Traditional or backyard match types' },
   { id: 'golf', label: 'Golf', icon: '⛳', team: false, desc: '9 or 18-hole scorecard with par tracking' },
@@ -79,20 +91,37 @@ export default function NewMatchPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isPractice, setIsPractice] = useState(false);
 
   const activeUser = currentUser;
 
   useEffect(() => {
+    let mounted = true;
+    
+    setLoading(true);
     getAllProfiles()
-      .then(setProfiles)
+      .then(data => {
+        if (mounted) {
+          setProfiles(data);
+          setError('');
+        }
+      })
       .catch((err) => {
-        console.error("Failed to fetch profiles:", err);
+        if (mounted) {
+          console.error("Failed to fetch profiles:", err);
+          setError('Failed to load players. Please check your connection.');
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
       });
     
     if (activeUser) {
       setIndividualPlayers([activeUser]);
       setTeam1Players([activeUser]);
     }
+    
+    return () => { mounted = false; };
   }, [currentUser]);
   useEffect(() => {
     if (cricketVariant === 'backyard') {
@@ -107,11 +136,14 @@ export default function NewMatchPage() {
   const sport = SPORTS.find(s => s.id === selectedSport);
   
   // Backyard mode forces an individual format setup
-  const isTeam = selectedSport === 'custom' 
-    ? customIsTeam 
-    : selectedSport === 'cricket'
-      ? cricketVariant === 'classic'
-      : (sport?.team ?? false);
+  // Practice mode also defaults to individual format to allow flexible multi-player "nets"
+  const isTeam = isPractice 
+    ? false 
+    : selectedSport === 'custom' 
+      ? customIsTeam 
+      : selectedSport === 'cricket'
+        ? cricketVariant === 'classic'
+        : (sport?.team ?? false);
 
   const filteredProfiles = profiles.filter(p =>
     p.display_name.toLowerCase().includes(playerSearch.toLowerCase()) ||
@@ -191,7 +223,7 @@ export default function NewMatchPage() {
   
     try {
       // 1. Generate IDs and Room Code
-      const matchId = crypto.randomUUID();
+      const matchId = generateUUID();
       const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
 
       // 2. Insert the match record
@@ -204,20 +236,21 @@ export default function NewMatchPage() {
           custom_game_name: customName.trim() || (selectedSport === 'custom' ? 'Custom Game' : null),
           match_time: new Date(matchTime).toISOString(),
           status: 'active',
+          is_practice: isPractice,
           created_by: currentUser?.id || null,
           house_rules: {
             ...houseRules,
             variant: selectedSport === 'cricket' ? cricketVariant : (selectedSport === 'golf' ? golfVariant : null),
             course_data: selectedSport === 'golf' && golfVariant === 'classic' ? golfCourse : null,
-            holes: selectedSport === 'golf' ? (golfVariant === 'chip_off' ? (houseRules.total_rounds as number || 9) : golfCourse.length) : undefined,
+            holes: selectedSport === 'golf' ? (golfVariant === 'chip_off' ? (houseRules.total_rounds as number || 9) : golfCourse.length) : null,
           },
           custom_config: selectedSport === 'custom' ? {
             is_team: customIsTeam,
             win_condition: customWinCondition,
             buttons: customButtons
           } : {
-            cricket_variant: cricketVariant,
-            golf_variant: golfVariant
+            cricket_variant: cricketVariant || null,
+            golf_variant: golfVariant || null
           }
         });
   
@@ -228,8 +261,8 @@ export default function NewMatchPage() {
       let team2Id: string | null = null;
 
       if (isTeam || (selectedSport === 'cricket' && cricketVariant === 'classic')) {
-        team1Id = crypto.randomUUID();
-        team2Id = crypto.randomUUID();
+        team1Id = generateUUID();
+        team2Id = generateUUID();
 
           // Create Team 1
           const { error: t1Error } = await supabase
@@ -245,6 +278,7 @@ export default function NewMatchPage() {
 
           // Add Team 1 Players
           const t1PlayersData = team1Players.map(p => ({
+            id: generateUUID(),
             match_id: matchId,
             profile_id: p.id,
             team_id: team1Id,
@@ -253,6 +287,7 @@ export default function NewMatchPage() {
 
           // Add Team 2 Players
           const t2PlayersData = team2Players.map(p => ({
+            id: generateUUID(),
             match_id: matchId,
             profile_id: p.id,
             team_id: team2Id,
@@ -266,6 +301,7 @@ export default function NewMatchPage() {
       } else if (selectedSport === 'cricket' && cricketVariant === 'backyard') {
         // Backyard Cricket - NO TEAMS, just players
         const playersData = individualPlayers.map((p, idx) => ({
+          id: generateUUID(),
           match_id: matchId,
           profile_id: p.id,
           team_id: null,
@@ -280,6 +316,7 @@ export default function NewMatchPage() {
       } else {
         // Other Individual format (Golf, Darts, etc.)
         const playersData = individualPlayers.map((p, idx) => ({
+          id: generateUUID(),
           match_id: matchId,
           profile_id: p.id,
           team_id: null,
@@ -298,12 +335,17 @@ export default function NewMatchPage() {
         const isBackyard = cricketVariant === 'backyard';
         
         const inningsData: any = {
+          id: generateUUID(),
           match_id: matchId,
           innings_number: 1,
           total_runs: 0,
           wickets: 0,
           balls: 0,
-          is_completed: false
+          is_completed: false,
+          extras_wide: 0,
+          extras_noball: 0,
+          extras_bye: 0,
+          extras_legbye: 0
         };
 
         if (isBackyard) {
@@ -328,9 +370,9 @@ export default function NewMatchPage() {
       // 5. Navigate to the match room
       navigate(`/match/${roomCode}`);
       
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to create match:", e);
-      setError('Failed to create match. Please try again.');
+      setError(e.message || 'Failed to create match. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -515,6 +557,14 @@ export default function NewMatchPage() {
                     onChange={e => setMatchTime(e.target.value)}
                     className="input-field"
                   />
+                </div>
+                <div className="pt-2">
+                  <RuleToggle 
+                    label="Practice Mode" 
+                    value={isPractice} 
+                    onChange={setIsPractice} 
+                  />
+                  <p className="text-[10px] text-charcoal-500 mt-1 uppercase font-bold tracking-wider">Practice matches are excluded from Global Leaderboards & SP.</p>
                 </div>
               </div>
             </div>

@@ -4,6 +4,7 @@ import { getInitials } from '../lib/auth';
 type AvatarProps = {
   name: string;
   color?: string;
+  url?: string | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 };
@@ -16,7 +17,15 @@ const sizeClasses = {
   xl: 'w-16 h-16 text-xl',
 };
 
-export default function Avatar({ name, color = '#3b82f6', size = 'md', className = '' }: AvatarProps) {
+export default function Avatar({ name, color = '#3b82f6', url, size = 'md', className = '' }: AvatarProps) {
+  if (url) {
+    return (
+      <div className={`${sizeClasses[size]} rounded-full overflow-hidden flex-shrink-0 ${className}`}>
+        <img src={url} alt={name} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+
   return (
     <div
       className={`${sizeClasses[size]} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 ${className}`}

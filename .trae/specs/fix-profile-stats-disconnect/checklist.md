@@ -1,0 +1,6 @@
+- [x] The `player_career_analytics` view uses `cricket_player_stats` for all cricket metrics
+- [x] 'golf' matches with 'chip_off' variant are correctly mapped to 'chip_off' sport in the view
+- [x] All metrics (strike_rate, economy_rate, dot_ball_percentage, etc.) are correctly calculated and match frontend names
+- [x] Profile page "Competitive" tab displays non-zero stats for active players
+- [x] Profile page "Practice" tab correctly filters by `is_practice = true`
+- [x] No regressions in leaderboard data fetching

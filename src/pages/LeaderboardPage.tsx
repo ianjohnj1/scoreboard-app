@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Trophy, Star, TrendingUp, RotateCcw, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getSportLabel } from '../lib/matches';
@@ -21,25 +22,17 @@ export default function LeaderboardPage() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch data from player_career_stats table
-      let query = supabase
-        .from('player_career_stats')
-        .select('*, profiles(*)');
-
-      if (sport !== 'all') {
-        query = query.eq('sport', sport);
-      }
-
-      const { data, error: supabaseError } = await query;
+      // Fetch all-time stats aggregated from events
+      const data = await getGlobalLeaderboardData();
       
       if (isMounted && !isMounted()) return;
 
-      if (supabaseError) throw supabaseError;
+      let processedData = [...data];
 
-      let processedData = (data || []).map((d: any) => ({
-        ...d,
-        profile: d.profiles as unknown as Profile
-      }));
+      // Filter by sport if not 'all'
+      if (sport !== 'all') {
+        processedData = processedData.filter(d => d.sport === sport);
+      }
 
       // Aggregate if 'all' sports (Global MVP) is selected
       if (sport === 'all') {
@@ -106,7 +99,8 @@ export default function LeaderboardPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'player_career_stats'
+          table: 'match_rooms',
+          filter: 'status=eq.completed'
         },
         () => {
           setRefreshKey(prev => prev + 1);
@@ -191,11 +185,13 @@ export default function LeaderboardPage() {
               <div className="flex items-end justify-center gap-2 mb-8 mt-4 px-2">
                 {/* 2nd Place */}
                 <div className="flex flex-col items-center flex-1 max-w-[100px]">
-                  <div className="relative mb-2">
-                    <Avatar name={entries[1].profile?.display_name || '?'} color={entries[1].profile?.avatar_color} size="lg" />
-                    <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-charcoal-400 border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">2</div>
-                  </div>
-                  <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center">{entries[1].profile?.display_name}</p>
+                  <Link to={`/profile/${entries[1].profile_id}`} className="flex flex-col items-center group">
+                    <div className="relative mb-2 transition-transform group-hover:scale-105">
+                      <Avatar name={entries[1].profile?.display_name || '?'} color={entries[1].profile?.avatar_color} size="lg" />
+                      <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-charcoal-400 border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">2</div>
+                    </div>
+                    <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-white">{entries[1].profile?.display_name}</p>
+                  </Link>
                   <p className="text-[10px] text-charcoal-400 font-mono">
                     {sport === 'all' ? `${entries[1].season_points} SP` : 
                      sport === 'golf' ? `${entries[1].best_score} Best` :
@@ -207,14 +203,16 @@ export default function LeaderboardPage() {
 
                 {/* 1st Place */}
                 <div className="flex flex-col items-center flex-1 max-w-[120px] -mt-4">
-                  <div className="relative mb-3">
-                    <div className="absolute -top-6 left-1/2 -translate-x-1/2">
-                      <Trophy size={24} className="text-warning-400 drop-shadow-lg" />
+                  <Link to={`/profile/${entries[0].profile_id}`} className="flex flex-col items-center group">
+                    <div className="relative mb-3 transition-transform group-hover:scale-105">
+                      <div className="absolute -top-6 left-1/2 -translate-x-1/2">
+                        <Trophy size={24} className="text-warning-400 drop-shadow-lg" />
+                      </div>
+                      <Avatar name={entries[0].profile?.display_name || '?'} color={entries[0].profile?.avatar_color} size="xl" />
+                      <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-warning-400 border-2 border-charcoal-900 flex items-center justify-center text-xs font-bold text-charcoal-900">1</div>
                     </div>
-                    <Avatar name={entries[0].profile?.display_name || '?'} color={entries[0].profile?.avatar_color} size="xl" />
-                    <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-warning-400 border-2 border-charcoal-900 flex items-center justify-center text-xs font-bold text-charcoal-900">1</div>
-                  </div>
-                  <p className="text-sm font-bold text-charcoal-50 truncate w-full text-center">{entries[0].profile?.display_name}</p>
+                    <p className="text-sm font-bold text-charcoal-50 truncate w-full text-center group-hover:text-white">{entries[0].profile?.display_name}</p>
+                  </Link>
                   <p className="text-xs text-warning-400 font-bold font-mono">
                     {sport === 'all' ? `${entries[0].season_points} SP` : 
                      sport === 'golf' ? `${entries[0].best_score} Best` :
@@ -226,11 +224,13 @@ export default function LeaderboardPage() {
 
                 {/* 3rd Place */}
                 <div className="flex flex-col items-center flex-1 max-w-[100px]">
-                  <div className="relative mb-2">
-                    <Avatar name={entries[2].profile?.display_name || '?'} color={entries[2].profile?.avatar_color} size="lg" />
-                    <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cricket border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">3</div>
-                  </div>
-                  <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center">{entries[2].profile?.display_name}</p>
+                  <Link to={`/profile/${entries[2].profile_id}`} className="flex flex-col items-center group">
+                    <div className="relative mb-2 transition-transform group-hover:scale-105">
+                      <Avatar name={entries[2].profile?.display_name || '?'} color={entries[2].profile?.avatar_color} size="lg" />
+                      <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cricket border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">3</div>
+                    </div>
+                    <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-white">{entries[2].profile?.display_name}</p>
+                  </Link>
                   <p className="text-[10px] text-charcoal-400 font-mono">
                     {sport === 'all' ? `${entries[2].season_points} SP` : 
                      sport === 'golf' ? `${entries[2].best_score} Best` :
@@ -274,15 +274,29 @@ export default function LeaderboardPage() {
                     );
                   }
                   if (sport === 'chip_off') {
+                    const efficiency = entry.chip_off_total_chips > 0 
+                      ? Math.round((entry.golf_lifetime_points / (entry.chip_off_total_chips * 10)) * 100) 
+                      : 0;
+                    const aceFreq = entry.chip_off_total_chips > 0 
+                      ? Math.round((entry.golf_lifetime_hio / entry.chip_off_total_chips) * 100) 
+                      : 0;
+                    const hazardAvoid = entry.chip_off_total_chips > 0 
+                      ? Math.round((entry.chip_off_scoring_chips / entry.chip_off_total_chips) * 100) 
+                      : 0;
+
                     return (
                       <div className="flex gap-4 text-xs font-mono">
                         <div className="flex flex-col items-end">
-                          <span className="text-charcoal-500 uppercase text-[8px]">Points</span>
-                          <span className="text-accent-400 font-bold">{entry.golf_lifetime_points || 0}</span>
+                          <span className="text-emerald-500 uppercase text-[8px]">Eff %</span>
+                          <span className="text-charcoal-100 font-bold">{efficiency}%</span>
                         </div>
                         <div className="flex flex-col items-end">
-                          <span className="text-charcoal-500 uppercase text-[8px]">10s</span>
-                          <span className="text-warning-400 font-bold">{entry.golf_lifetime_hio || 0}</span>
+                          <span className="text-warning-400 uppercase text-[8px]">Aces</span>
+                          <span className="text-charcoal-100 font-bold">{entry.golf_lifetime_hio || 0}</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-blue-400 uppercase text-[8px]">Avoid</span>
+                          <span className="text-charcoal-100 font-bold">{hazardAvoid}%</span>
                         </div>
                       </div>
                     );
@@ -309,16 +323,18 @@ export default function LeaderboardPage() {
                     }`}>
                       {rank + 1}
                     </div>
-                    <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-charcoal-100 font-semibold text-sm truncate">{entry.profile?.display_name}</p>
-                        {entry.profile?.is_guest && <span className="pill-guest text-[10px] px-1.5 py-0.5">Guest</span>}
+                    <Link to={`/profile/${entry.profile_id}`} className="flex flex-1 items-center gap-3 min-w-0 group">
+                      <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" className="group-hover:scale-105 transition-transform" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-charcoal-100 font-semibold text-sm truncate group-hover:text-white">{entry.profile?.display_name}</p>
+                          {entry.profile?.is_guest && <span className="pill-guest text-[10px] px-1.5 py-0.5">Guest</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-charcoal-500 text-[10px] uppercase tracking-wider">{getSportLabel(entry.sport)}</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-charcoal-500 text-[10px] uppercase tracking-wider">{getSportLabel(entry.sport)}</p>
-                      </div>
-                    </div>
+                    </Link>
                     {renderStats()}
                   </div>
                 );

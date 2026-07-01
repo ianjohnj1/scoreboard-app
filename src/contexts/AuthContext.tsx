@@ -34,7 +34,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Perform a lightweight "ping" to verify DNS/Connectivity
       const { error: pingError } = await supabase
         .from('profiles')
-        .select('count', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .limit(1);
       
       if (pingError && (pingError.message?.includes('Failed to fetch') || pingError.code === 'PGRST301')) {
         throw new Error('Supabase unreachable');

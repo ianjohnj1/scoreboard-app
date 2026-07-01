@@ -47,6 +47,8 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
         .eq('match_id', matchId);
 
       const playerMap = new Map<string, any>();
+      // Initialize with all players
+      players.forEach(p => playerMap.set(p.profile_id, { runs: 0, wickets: 0, balls: 0 }));
       
       if (cricketStats && cricketStats.length > 0) {
         cricketStats.forEach(s => {
@@ -120,12 +122,17 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
           .eq('is_undone', false);
 
         const playerMap = new Map<string, any>();
+        // Initialize map with all players at 0
+        players.forEach(p => playerMap.set(p.profile_id, { points: 0, tens: 0 }));
+
         events?.forEach(e => {
           if (!e.player_id || e.event_type !== 'chip_off_score') return;
-          const existing = playerMap.get(e.player_id) || { points: 0, tens: 0 };
+          const existing = playerMap.get(e.player_id) || { points: 0, tens: 0, total_chips: 0, scoring_chips: 0 };
           const pts = (e.event_data.points as number) || 0;
           existing.points += pts;
+          existing.total_chips += 1;
           if (pts === 10) existing.tens += 1;
+          if ([2, 5, 10].includes(pts)) existing.scoring_chips += 1;
           playerMap.set(e.player_id, existing);
         });
 
@@ -146,8 +153,7 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
         }
 
         players.forEach(p => {
-          const s = playerMap.get(p.profile_id);
-          if (!s) return;
+          const s = playerMap.get(p.profile_id) || { points: 0, tens: 0, total_chips: 0, scoring_chips: 0 };
           
           stats.push({
             profile_id: p.profile_id,
@@ -164,6 +170,8 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
           .eq('match_id', matchId);
 
         const playerMap = new Map<string, any>();
+        // Initialize with all players
+        players.forEach(p => playerMap.set(p.profile_id, { strokes: 0, hio: 0 }));
         
         if (golfScores && golfScores.length > 0) {
           golfScores?.forEach(s => {
@@ -203,8 +211,8 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
         }
 
         players.forEach(p => {
-          const s = playerMap.get(p.profile_id);
-          if (!s || s.strokes === 0) return;
+          const s = playerMap.get(p.profile_id) || { strokes: 0, hio: 0 };
+          if (s.strokes === 0 && !isChipOff) return; // Skip if no strokes in classic golf
 
           stats.push({
             profile_id: p.profile_id,
@@ -385,6 +393,18 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
 }
 
 export async function updateCareerStats(matchId: string, retries = 3): Promise<void> {
+  // 0. Check if it's a practice match
+  const { data: match } = await supabase
+    .from('match_rooms')
+    .select('is_practice')
+    .eq('id', matchId)
+    .single();
+  
+  if (match?.is_practice) {
+    console.log(`Match ${matchId} is a practice match. Skipping career stats update.`);
+    return;
+  }
+
   let matchStats: MatchStats[] = [];
   let lastError: any = null;
 
@@ -410,8 +430,9 @@ export async function updateCareerStats(matchId: string, retries = 3): Promise<v
 
   // Sort match stats to determine placement points
   const sortedStats = [...matchStats].sort((a, b) => {
-    const sport = matchStats[0]?.sport;
-    if (sport === 'golf') return a.score - b.score;
+    // For golf (classic), lower strokes is better
+    if (a.sport === 'golf') return a.score - b.score;
+    // For chip_off and other sports, higher score is better
     return b.score - a.score;
   });
 
@@ -515,7 +536,8 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
   const { data: matches, error: matchesError } = await supabase
     .from('match_rooms')
     .select('*')
-    .eq('status', 'completed');
+    .eq('status', 'completed')
+    .eq('is_practice', false);
 
   if (matchesError) throw matchesError;
   if (!matches || matches.length === 0) return [];
@@ -523,10 +545,11 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
   const matchIds = matches.map(m => m.id);
 
   // 2. Fetch all players and events for these matches
-  const [{ data: players }, { data: events }, { data: profiles }] = await Promise.all([
+  const [{ data: players }, { data: events }, { data: profiles }, { data: cricketStats }] = await Promise.all([
     supabase.from('match_players').select('*').in('match_id', matchIds),
     supabase.from('match_events').select('*').in('match_id', matchIds).eq('is_undone', false),
-    supabase.from('profiles').select('*')
+    supabase.from('profiles').select('*'),
+    supabase.from('cricket_player_stats').select('*').in('match_id', matchIds)
   ]);
 
   const profileMap = new Map((profiles || []).map(p => [p.id, p]));
@@ -545,6 +568,13 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
         matches_lost: 0,
         total_score: 0,
         best_score: null,
+        season_points: 0,
+        cricket_lifetime_runs: 0,
+        cricket_lifetime_wickets: 0,
+        golf_lifetime_points: 0,
+        golf_lifetime_hio: 0,
+        chip_off_total_chips: 0,
+        chip_off_scoring_chips: 0,
         extra_stats: {
           points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
           runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0
@@ -561,95 +591,110 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
     
     const playerMap = new Map<string, any>();
 
-    function updateLocalPlayerStats(pid: string, e: any) {
-      const existing = playerMap.get(pid) || { 
-        points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
-        runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0 
-      };
-      
-      switch (e.event_type) {
-        case 'chip_off_score':
-          const pts = (e.event_data.points as number) || 0;
-          existing.points += pts;
-          if (pts === 10) existing.tens += 1;
-          break;
-        case 'darts_turn':
-        case 'darts_bust':
-          const darts = (e.event_data.darts as number[]) || [];
-          existing.points += darts.reduce((a, b) => a + b, 0);
-          break;
-        case 'darts_win':
-          existing.wins += 1;
-          const finalDarts = (e.event_data.darts as number[]) || [];
-          existing.points += finalDarts.reduce((a, b) => a + b, 0);
-          break;
-        case 'tt_point':
-          existing.points += 1;
-          break;
-        case 'tt_set':
-          existing.sets += 1;
-          break;
-        case 'pool_frame':
-          existing.frames += 1;
-          break;
-        case 'bball_score':
-          existing.points += (e.event_data.pts as number) || 0;
-          break;
-        case 'cards_round':
-          const roundScores = (e.event_data.round as Record<string, number>) || {};
-          if (roundScores[pid] !== undefined) {
-            existing.points += roundScores[pid];
-          }
-          break;
-        case 'custom_score':
-          existing.points += (e.event_data.value as number) || 0;
-          break;
-        case 'delivery':
-          existing.runs += e.event_data.runs || 0;
-          const extra = e.event_data.extra;
-          if (!extra || extra === 'bye' || extra === 'legbye') {
-            existing.balls += 1;
-          }
-          break;
-        case 'wicket':
-          if (e.event_data.dismissedBy) {
-            const bowlerPid = e.event_data.dismissedBy;
-            const bStats = playerMap.get(bowlerPid) || { 
-              points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
-              runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0 
-            };
-            bStats.wickets += 1;
-            playerMap.set(bowlerPid, bStats);
-          }
-          break;
-        case 'golf_score':
-          existing.strokes += e.event_data.strokes || 0;
-          if (e.event_data.holeInOne) existing.hio += 1;
-          break;
-        case 'point':
-        case 'score':
-          existing.points += (e.event_data.amount as number) || 1;
-          break;
+    if (match.sport === 'cricket') {
+      const matchCricketStats = cricketStats?.filter(s => s.match_id === match.id) || [];
+      matchCricketStats.forEach(s => {
+        const existing = playerMap.get(s.profile_id) || { 
+          points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
+          runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0 
+        };
+        existing.runs += s.bat_runs || 0;
+        existing.balls += s.bat_balls || 0;
+        existing.wickets += s.bowl_wickets || 0;
+        playerMap.set(s.profile_id, existing);
+      });
+    } else {
+      function updateLocalPlayerStats(pid: string, e: any) {
+        const existing = playerMap.get(pid) || { 
+          points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
+          runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0 
+        };
+        
+        switch (e.event_type) {
+          case 'chip_off_score':
+            const pts = (e.event_data.points as number) || 0;
+            existing.points += pts;
+            if (pts === 10) existing.tens += 1;
+            break;
+          case 'darts_turn':
+          case 'darts_bust':
+            const darts = (e.event_data.darts as number[]) || [];
+            existing.points += darts.reduce((a, b) => a + b, 0);
+            break;
+          case 'darts_win':
+            existing.wins += 1;
+            const finalDarts = (e.event_data.darts as number[]) || [];
+            existing.points += finalDarts.reduce((a, b) => a + b, 0);
+            break;
+          case 'tt_point':
+            existing.points += 1;
+            break;
+          case 'tt_set':
+            existing.sets += 1;
+            break;
+          case 'pool_frame':
+            existing.frames += 1;
+            break;
+          case 'bball_score':
+            existing.points += (e.event_data.pts as number) || 0;
+            break;
+          case 'cards_round':
+            const roundScores = (e.event_data.round as Record<string, number>) || {};
+            if (roundScores[pid] !== undefined) {
+              existing.points += roundScores[pid];
+            }
+            break;
+          case 'custom_score':
+            existing.points += (e.event_data.value as number) || 0;
+            break;
+          case 'delivery':
+            existing.runs += e.event_data.runs || 0;
+            const extra = e.event_data.extra;
+            if (!extra || extra === 'bye' || extra === 'legbye') {
+              existing.balls += 1;
+            }
+            break;
+          case 'wicket':
+            if (e.event_data.dismissedBy) {
+              const bowlerPid = e.event_data.dismissedBy;
+              const bStats = playerMap.get(bowlerPid) || { 
+                points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
+                runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0 
+              };
+              bStats.wickets += 1;
+              playerMap.set(bowlerPid, bStats);
+            }
+            break;
+          case 'golf_score':
+            existing.strokes += e.event_data.strokes || 0;
+            if (e.event_data.holeInOne) existing.hio += 1;
+            break;
+          case 'point':
+          case 'score':
+            existing.points += (e.event_data.amount as number) || 1;
+            break;
+        }
+        playerMap.set(pid, existing);
       }
-      playerMap.set(pid, existing);
+
+      matchEvents.forEach(e => {
+        let pid = e.player_id;
+        if (!pid && e.event_data?.player !== undefined) {
+          pid = matchPlayers[e.event_data.player as number]?.profile_id;
+        }
+        if (!pid && e.event_data?.team !== undefined) {
+          const teamId = match.winner_team_id; // Simple heuristic
+          if (teamId) {
+            matchPlayers.filter(p => p.team_id === teamId).forEach(tp => updateLocalPlayerStats(tp.profile_id, e));
+            return;
+          }
+        }
+        if (pid) updateLocalPlayerStats(pid, e);
+      });
     }
 
-    matchEvents.forEach(e => {
-      let pid = e.player_id;
-      if (!pid && e.event_data?.player !== undefined) {
-        pid = matchPlayers[e.event_data.player as number]?.profile_id;
-      }
-      if (!pid && e.event_data?.team !== undefined) {
-        const teamId = match.winner_team_id; // Simple heuristic
-        if (teamId) {
-          matchPlayers.filter(p => p.team_id === teamId).forEach(tp => updateLocalPlayerStats(tp.profile_id, e));
-          return;
-        }
-      }
-      if (pid) updateLocalPlayerStats(pid, e);
-    });
-
-    // Update global stats from local match results
+    // 3.1 Aggregate this match's stats
+    const matchStatsList: any[] = [];
     matchPlayers.forEach(p => {
       const s = playerMap.get(p.profile_id) || { 
         points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
@@ -657,34 +702,81 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
       };
       
       const isWinner = match.winner_profile_id === p.profile_id || match.winner_team_id === p.team_id;
-      const g = getPlayerStats(p.profile_id, match.sport);
-      
       let score = s.points;
       if (match.sport === 'cricket') score = s.runs;
       if (match.sport === 'golf') score = s.strokes;
 
+      matchStatsList.push({
+        profile_id: p.profile_id,
+        score,
+        is_winner: isWinner,
+        extra: s
+      });
+    });
+
+    // 3.2 Determine placement points
+    const sortedForPlacement = [...matchStatsList].sort((a, b) => {
+      if (match.sport === 'golf') return a.score - b.score;
+      return b.score - a.score;
+    });
+
+    // 3.3 Update global stats
+    matchStatsList.forEach(ms => {
+      const g = getPlayerStats(ms.profile_id, match.sport);
+      
+      // Calculate Season Points
+      const rank = sortedForPlacement.findIndex(s => s.profile_id === ms.profile_id) + 1;
+      let placementSP = 10; // Completion Bonus
+      if (rank === 1) placementSP = 100;
+      else if (rank === 2) placementSP = 50;
+      else if (rank === 3) placementSP = 25;
+
+      let milestoneSP = 0;
+      if (match.sport === 'chip_off') {
+        milestoneSP += (ms.extra.tens || 0) * 50;
+      } else if (match.sport === 'cricket') {
+        if (ms.score >= 50) milestoneSP += 50;
+        if ((ms.extra.wickets || 0) >= 3) milestoneSP += 30;
+      } else if (match.sport === 'golf') {
+        milestoneSP += (ms.extra.hio || 0) * 50;
+      }
+
       g.matches_played += 1;
-      g.matches_won += isWinner ? 1 : 0;
-      g.matches_lost += isWinner ? 0 : 1;
-      g.total_score += score;
+      g.matches_won += ms.is_winner ? 1 : 0;
+      g.matches_lost += ms.is_winner ? 0 : 1;
+      g.total_score += ms.score;
+      g.season_points += (placementSP + milestoneSP);
+
+      // Lifetime counters
+      if (match.sport === 'cricket') {
+        g.cricket_lifetime_runs += ms.score;
+        g.cricket_lifetime_wickets += (ms.extra.wickets || 0);
+      } else if (match.sport === 'chip_off') {
+        g.golf_lifetime_points += ms.score;
+        g.golf_lifetime_hio += (ms.extra.tens || 0);
+        g.chip_off_total_chips += (ms.extra.total_chips || 0);
+        g.chip_off_scoring_chips += (ms.extra.scoring_chips || 0);
+      } else if (match.sport === 'golf') {
+        g.golf_lifetime_hio += (ms.extra.hio || 0);
+      }
       
       // Update best score
       if (g.best_score === null) {
-        g.best_score = score;
+        g.best_score = ms.score;
       } else {
         if (match.sport === 'golf') {
-          if (score > 0) g.best_score = Math.min(g.best_score, score);
+          if (ms.score > 0) g.best_score = Math.min(g.best_score, ms.score);
         } else {
-          g.best_score = Math.max(g.best_score, score);
+          g.best_score = Math.max(g.best_score, ms.score);
         }
       }
 
       // Merge extra stats
-      Object.keys(s).forEach(key => {
-        if (typeof s[key] === 'number') {
-          g.extra_stats[key] = (g.extra_stats[key] || 0) + s[key];
+      Object.keys(ms.extra).forEach(key => {
+        if (typeof ms.extra[key] === 'number') {
+          g.extra_stats[key] = (g.extra_stats[key] || 0) + ms.extra[key];
         } else {
-          g.extra_stats[key] = s[key];
+          g.extra_stats[key] = ms.extra[key];
         }
       });
     });

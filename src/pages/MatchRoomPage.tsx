@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play } from 'lucide-react';
+import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X } from 'lucide-react';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getSportIcon, getSportLabel } from '../lib/matches';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { getAllProfiles } from '../lib/auth';
 import Avatar from '../components/Avatar';
 import Modal from '../components/Modal';
 import QRCodeModal from '../components/QRCodeModal';
@@ -44,11 +45,22 @@ export default function MatchRoomPage() {
   const [showQR, setShowQR] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showEditRoster, setShowEditRoster] = useState(false);
+  const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [isAddingGuest, setIsAddingGuest] = useState(false);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
+
+  useEffect(() => {
+    if (showEditRoster) {
+      getAllProfiles().then(setAllProfiles).catch(console.error);
+    }
+  }, [showEditRoster]);
 
   const loadMatch = useCallback(async (isMounted?: () => boolean) => {
     if (!roomCode) return;
@@ -154,6 +166,85 @@ export default function MatchRoomPage() {
     await loadMatch();
     setShowEndConfirm(false);
     setShowMenu(false);
+  };
+
+  const handleAddPlayer = async (profileId: string) => {
+    if (!match) return;
+    try {
+      const { error } = await supabase
+        .from('match_players')
+        .insert({
+          match_id: match.id,
+          profile_id: profileId,
+          role: 'player',
+          batting_order: players.length + 1
+        });
+      if (error) throw error;
+      await loadMatch();
+    } catch (err) {
+      console.error("Failed to add player:", err);
+      alert("Failed to add player.");
+    }
+  };
+
+  const handleRemovePlayer = async (profileId: string) => {
+    if (!match) return;
+    try {
+      // Check if player has events
+      const { count, error: countError } = await supabase
+        .from('match_events')
+        .select('*', { count: 'exact', head: true })
+        .eq('match_id', match.id)
+        .eq('player_id', profileId);
+      
+      if (countError) throw countError;
+      
+      if (count && count > 0) {
+        alert("Cannot remove player who has already participated in the match.");
+        return;
+      }
+
+      const { error } = await supabase
+        .from('match_players')
+        .delete()
+        .eq('match_id', match.id)
+        .eq('profile_id', profileId);
+      
+      if (error) throw error;
+      await loadMatch();
+    } catch (err) {
+      console.error("Failed to remove player:", err);
+      alert("Failed to remove player.");
+    }
+  };
+
+  const handleAddGuest = async () => {
+    if (!match || !guestName.trim()) return;
+    setIsAddingGuest(true);
+    try {
+      const guestUsername = `guest_${Date.now()}`;
+      const { data: newGuest, error } = await supabase
+        .from('profiles')
+        .insert([{
+          username: guestUsername,
+          display_name: guestName.trim(),
+          avatar_color: '#f59e0b',
+          is_guest: true
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (newGuest) {
+        await handleAddPlayer(newGuest.id);
+        setGuestName('');
+      }
+    } catch (err) {
+      console.error("Failed to add guest:", err);
+      alert("Failed to add guest.");
+    } finally {
+      setIsAddingGuest(false);
+    }
   };
 
   if (loading) {
@@ -262,12 +353,105 @@ export default function MatchRoomPage() {
             {match.status === 'paused' ? 'Resume Match' : 'Pause Match'}
           </button>
           <button
+            onClick={() => { setShowMenu(false); setShowEditRoster(true); }}
+            className="w-full btn-secondary flex items-center gap-3 justify-start"
+          >
+            <Users size={18} />
+            Edit Roster
+          </button>
+          <button
             onClick={() => { setShowMenu(false); setShowEndConfirm(true); }}
             className="w-full btn-danger flex items-center gap-3 justify-start"
           >
             <CheckCircle size={18} />
             End & Lock Match
           </button>
+        </div>
+      </Modal>
+
+      {/* Edit Roster Modal */}
+      <Modal isOpen={showEditRoster} onClose={() => setShowEditRoster(false)} title="Manage Roster">
+        <div className="space-y-4 max-h-[70vh] flex flex-col">
+          {/* Current Roster */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-black text-charcoal-500 uppercase tracking-widest">Active Players</h3>
+            <div className="flex flex-wrap gap-2">
+              {players.map(p => {
+                const profile = profiles.get(p.profile_id);
+                if (!profile) return null;
+                return (
+                  <div key={p.profile_id} className="flex items-center gap-1.5 bg-charcoal-800 rounded-full pl-1 pr-2 py-1 border border-charcoal-700">
+                    <Avatar name={profile.display_name} color={profile.avatar_color} size="xs" />
+                    <span className="text-charcoal-200 text-xs">{profile.display_name}</span>
+                    <button 
+                      onClick={() => handleRemovePlayer(p.profile_id)}
+                      className="text-charcoal-500 hover:text-danger-400"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="divider border-charcoal-700" />
+
+          {/* Add Player */}
+          <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
+            <h3 className="text-xs font-black text-charcoal-500 uppercase tracking-widest">Add to Match</h3>
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-charcoal-500" />
+              <input 
+                type="text" 
+                value={playerSearch} 
+                onChange={e => setPlayerSearch(e.target.value)} 
+                className="input-field pl-9 py-2 text-sm" 
+                placeholder="Search registered players..." 
+              />
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+              {allProfiles
+                .filter(p => 
+                  !players.some(mp => mp.profile_id === p.id) &&
+                  (p.display_name.toLowerCase().includes(playerSearch.toLowerCase()) || 
+                   p.username?.toLowerCase().includes(playerSearch.toLowerCase()))
+                )
+                .slice(0, 10)
+                .map(p => (
+                  <button 
+                    key={p.id} 
+                    onClick={() => handleAddPlayer(p.id)}
+                    className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-charcoal-800 transition-colors text-left"
+                  >
+                    <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                    <span className="text-charcoal-200 text-sm font-medium">{p.display_name}</span>
+                    <Plus size={14} className="ml-auto text-charcoal-500" />
+                  </button>
+                ))
+              }
+            </div>
+
+            <div className="pt-2 border-t border-charcoal-700">
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={guestName} 
+                  onChange={e => setGuestName(e.target.value)} 
+                  className="input-field py-2 text-sm" 
+                  placeholder="New guest name..." 
+                />
+                <button 
+                  onClick={handleAddGuest}
+                  disabled={!guestName.trim() || isAddingGuest}
+                  className="btn-secondary px-4 text-xs font-bold"
+                >
+                  Add Guest
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </Modal>
 

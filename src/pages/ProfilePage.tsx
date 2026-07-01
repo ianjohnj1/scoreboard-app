@@ -1,21 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   User, LogOut, Settings, Star, BarChart2, Users,
-  Link as LinkIcon, Shield, Edit3, Check
+  Link as LinkIcon, Shield, Edit3, Check, ArrowLeft
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { linkGuestAccount, getAllProfiles } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/Avatar';
 import Modal from '../components/Modal';
-import type { Profile, PlayerCareerStats } from '../lib/supabase';
+import type { Profile, PlayerCareerAnalytics } from '../lib/supabase';
 
 export default function ProfilePage() {
+  const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const { currentUser, logout, isAdmin } = useAuth();
-  const [stats, setStats] = useState<PlayerCareerStats[]>([]);
+  const { currentUser, logout, isAdmin: isCurrentUserAdmin } = useAuth();
+  const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
+  const [stats, setStats] = useState<PlayerCareerAnalytics[]>([]);
   const [tab, setTab] = useState<'individual' | 'team'>('individual');
+  const [isPracticeFilter, setIsPracticeFilter] = useState(false);
   const [guestProfiles, setGuestProfiles] = useState<Profile[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkTarget, setLinkTarget] = useState<Profile | null>(null);
@@ -23,14 +26,42 @@ export default function ProfilePage() {
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState('');
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({ displayName: '', catchphrase: '' });
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const isOwnProfile = !id || id === currentUser?.id;
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!id) {
+        setTargetProfile(currentUser);
+        return;
+      }
+      
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (!error && data) {
+        setTargetProfile(data);
+      }
+    };
+    loadProfile();
+  }, [id, currentUser]);
+
   const loadStats = useCallback(async (isMounted?: () => boolean) => {
-    if (!currentUser) return;
+    const profileId = id || currentUser?.id;
+    if (!profileId) return;
+
     const { data, error } = await supabase
-      .from('player_career_stats')
+      .from('player_career_analytics')
       .select('*')
-      .eq('profile_id', currentUser.id);
+      .eq('profile_id', profileId)
+      .eq('is_practice', isPracticeFilter);
     
     if (isMounted && !isMounted()) return;
 
@@ -39,33 +70,97 @@ export default function ProfilePage() {
       return;
     }
     setStats(data || []);
-  }, [currentUser]);
+  }, [id, currentUser, isPracticeFilter]);
+
+  useEffect(() => {
+    if (targetProfile && isOwnProfile) {
+      setSettingsForm({
+        displayName: targetProfile.display_name,
+        catchphrase: targetProfile.catchphrase || ''
+      });
+    }
+  }, [targetProfile, isOwnProfile]);
+
+  const handleUpdateSettings = async () => {
+    if (!currentUser || !isOwnProfile) return;
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: settingsForm.displayName,
+          catchphrase: settingsForm.catchphrase,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', currentUser.id);
+      
+      if (error) throw error;
+      setShowSettingsModal(false);
+    } catch (err) {
+      console.error("Error updating profile:", err);
+      alert("Failed to update profile.");
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser || !isOwnProfile) return;
+
+    setUploadingAvatar(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${currentUser.id}/${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', currentUser.id);
+
+      if (updateError) throw updateError;
+    } catch (err) {
+      console.error("Error uploading avatar:", err);
+      alert("Failed to upload avatar.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
     loadStats(() => mounted);
 
-    if (currentUser && isAdmin) {
+    if (isOwnProfile && currentUser && isCurrentUserAdmin) {
       getAllProfiles().then(profiles => {
         if (!mounted) return;
         setGuestProfiles(profiles.filter(p => p.is_guest && !p.linked_profile_id));
       });
     }
     return () => { mounted = false; };
-  }, [currentUser, isAdmin, loadStats]);
+  }, [id, currentUser, isCurrentUserAdmin, isOwnProfile, loadStats]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    const profileId = id || currentUser?.id;
+    if (!profileId) return;
 
     const channel = supabase
-      .channel(`profile-stats-${currentUser.id}`)
+      .channel(`profile-stats-${profileId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'player_career_stats',
-          filter: `profile_id=eq.${currentUser.id}`
+          filter: `profile_id=eq.${profileId}`
         },
         () => {
           setRefreshKey(prev => prev + 1);
@@ -76,7 +171,7 @@ export default function ProfilePage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUser]);
+  }, [id, currentUser]);
 
   useEffect(() => {
     if (refreshKey > 0) {
@@ -90,7 +185,7 @@ export default function ProfilePage() {
   };
 
   const handleLinkGuest = async () => {
-    if (!linkTarget) return;
+    if (!linkTarget || !isOwnProfile) return;
     setLinkLoading(true);
     setLinkError('');
     try {
@@ -104,7 +199,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (!currentUser) return null;
+  if (!targetProfile) return null;
 
   const totalWins = stats.reduce((s, x) => s + x.matches_won, 0);
   const totalPlayed = stats.reduce((s, x) => s + x.matches_played, 0);
@@ -115,14 +210,22 @@ export default function ProfilePage() {
       <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-6 safe-top">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <Avatar name={currentUser.display_name} color={currentUser.avatar_color} size="xl" />
+            {!isOwnProfile && (
+              <button 
+                onClick={() => navigate(-1)}
+                className="p-2 rounded-xl bg-charcoal-700 text-charcoal-300 hover:text-white transition-colors mr-2"
+              >
+                <ArrowLeft size={20} />
+              </button>
+            )}
+            <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} url={targetProfile.avatar_url} size="xl" />
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-charcoal-50">{currentUser.display_name}</h1>
-                {isAdmin && <span className="pill-admin">Admin</span>}
+                <h1 className="text-xl font-bold text-charcoal-50">{targetProfile.display_name}</h1>
+                {targetProfile.is_admin && <span className="pill-admin">Admin</span>}
               </div>
-              {currentUser.username && (
-                <p className="text-charcoal-400 text-sm">@{currentUser.username}</p>
+              {targetProfile.username && (
+                <p className="text-charcoal-400 text-sm">@{targetProfile.username}</p>
               )}
               <div className="flex items-center gap-3 mt-1 text-xs text-charcoal-500">
                 <span>{totalWins}W / {totalPlayed} games</span>
@@ -131,18 +234,52 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="p-2 rounded-xl hover:bg-charcoal-700 text-charcoal-400 transition-colors"
-          >
-            <LogOut size={20} />
-          </button>
+          {isOwnProfile && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="p-2 rounded-xl hover:bg-charcoal-700 text-charcoal-400 transition-colors"
+              >
+                <Settings size={20} />
+              </button>
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-xl hover:bg-charcoal-700 text-charcoal-400 transition-colors"
+              >
+                <LogOut size={20} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="p-4 max-w-2xl mx-auto space-y-4">
+      {targetProfile.catchphrase && (
+        <div className="bg-accent-600/10 py-2 overflow-hidden relative border-y border-accent-500/20">
+          <div className="flex whitespace-nowrap animate-marquee font-black uppercase tracking-widest text-accent-500 text-[10px] italic">
+            <span className="px-8">{targetProfile.catchphrase}</span>
+            <span className="px-8">{targetProfile.catchphrase}</span>
+            <span className="px-8">{targetProfile.catchphrase}</span>
+            <span className="px-8">{targetProfile.catchphrase}</span>
+          </div>
+        </div>
+      )}
 
+      <div className="p-4 max-w-2xl mx-auto space-y-4">
         {/* Stats tabs */}
+        <div className="flex bg-charcoal-800 rounded-xl p-1 border border-charcoal-700">
+          {[{v:false,l:'Competitive'},{v:true,l:'Practice'}].map(t => (
+            <button
+              key={t.l}
+              onClick={() => setIsPracticeFilter(t.v)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                isPracticeFilter === t.v ? 'bg-accent-600 text-white' : 'text-charcoal-400'
+              }`}
+            >
+              {t.l}
+            </button>
+          ))}
+        </div>
+
         <div className="flex bg-charcoal-800 rounded-xl p-1 border border-charcoal-700">
           {[{v:'individual',l:'Individual Stats'},{v:'team',l:'Team Stats'}].map(t => (
             <button
@@ -166,38 +303,92 @@ export default function ProfilePage() {
         ) : (
           <div className="space-y-3">
             {stats.map(s => (
-              <div key={s.id} className="card p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-charcoal-100 capitalize">{s.sport.replace('_', ' ')}</h3>
-                  <div className="flex items-center gap-1 text-warning-400">
-                    <Star size={12} fill="currentColor" />
-                    <span className="text-xs font-semibold">{s.matches_won}W</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'Played', value: s.matches_played },
-                    { label: 'Won', value: s.matches_won },
-                    { label: 'Lost', value: s.matches_lost },
-                  ].map(st => (
-                    <div key={st.label} className="stat-card">
-                      <p className="text-charcoal-500 text-xs">{st.label}</p>
-                      <p className="text-charcoal-100 font-bold font-mono text-lg">{st.value}</p>
+                <div key={s.id || `${s.profile_id}-${s.sport}`} className="card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-charcoal-100 capitalize">{s.sport.replace('_', ' ')}</h3>
+                    <div className="flex items-center gap-1 text-warning-400">
+                      <Star size={12} fill="currentColor" />
+                      <span className="text-xs font-semibold">{s.matches_won}W</span>
                     </div>
-                  ))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Played', value: s.matches_played },
+                      { label: 'Won', value: s.matches_won },
+                      { label: 'Lost', value: s.matches_lost },
+                    ].map(st => (
+                      <div key={st.label} className="stat-card">
+                        <p className="text-charcoal-500 text-xs">{st.label}</p>
+                        <p className="text-charcoal-100 font-bold font-mono text-lg">{st.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Advanced Analytics */}
+                  {s.sport === 'cricket' && (
+                    <div className="space-y-2 mt-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-accent-950/20 border-accent-900/30">
+                          <p className="text-accent-500 text-[10px] uppercase font-bold">Strike Rate</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.strike_rate.toFixed(1)}</p>
+                        </div>
+                        <div className="stat-card bg-accent-950/20 border-accent-900/30">
+                          <p className="text-accent-500 text-[10px] uppercase font-bold">Dot %</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.dot_ball_percentage.toFixed(1)}%</p>
+                        </div>
+                        <div className="stat-card bg-accent-950/20 border-accent-900/30">
+                          <p className="text-accent-500 text-[10px] uppercase font-bold">Boundary %</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.boundary_percentage.toFixed(1)}%</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-success-950/20 border-success-900/30">
+                          <p className="text-success-500 text-[10px] uppercase font-bold">Economy</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.economy_rate.toFixed(2)}</p>
+                        </div>
+                        <div className="stat-card bg-success-950/20 border-success-900/30">
+                          <p className="text-success-500 text-[10px] uppercase font-bold">Bowl SR</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.bowling_strike_rate > 0 ? s.bowling_strike_rate.toFixed(1) : '-'}</p>
+                        </div>
+                        <div className="stat-card bg-success-950/20 border-success-900/30">
+                          <p className="text-success-500 text-[10px] uppercase font-bold">Bowl Dots</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.total_cricket_dots_bowled}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {s.sport === 'chip_off' && (
+                    <div className="space-y-2 mt-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-emerald-950/20 border-emerald-900/30">
+                          <p className="text-emerald-500 text-[10px] uppercase font-bold">Efficiency</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.scoring_efficiency.toFixed(1)}%</p>
+                        </div>
+                        <div className="stat-card bg-emerald-950/20 border-emerald-900/30">
+                          <p className="text-emerald-500 text-[10px] uppercase font-bold">Ace Freq</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.ace_frequency.toFixed(1)}%</p>
+                        </div>
+                        <div className="stat-card bg-emerald-950/20 border-emerald-900/30">
+                          <p className="text-emerald-500 text-[10px] uppercase font-bold">Hazard Avoid</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.hazard_avoidance_rating.toFixed(1)}%</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-emerald-950/20 border-emerald-900/30">
+                          <p className="text-emerald-500 text-[10px] uppercase font-bold">Avg Prox</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.average_proximity_tier.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {s.best_score != null && (
-                  <p className="text-charcoal-400 text-xs mt-2">
-                    Best score: <span className="text-charcoal-200 font-mono">{s.best_score}</span>
-                  </p>
-                )}
-              </div>
             ))}
           </div>
         )}
 
         {/* Admin Panel */}
-        {isAdmin && (
+        {isOwnProfile && isCurrentUserAdmin && (
           <div className="card overflow-hidden">
             <button
               onClick={() => setShowAdminPanel(!showAdminPanel)}
@@ -247,39 +438,96 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* Link Guest Modal */}
-      <Modal isOpen={showLinkModal} onClose={() => setShowLinkModal(false)} title="Link Guest Account">
-        <div className="space-y-4">
-          <p className="text-charcoal-400 text-sm">
-            Convert <strong className="text-charcoal-200">{linkTarget?.display_name}</strong>'s guest profile to a permanent account.
-          </p>
-          {[
-            { field: 'displayName', label: 'Display Name', type: 'text' },
-            { field: 'username', label: 'Username', type: 'text' },
-            { field: 'pin', label: 'PIN (4-6 digits)', type: 'password' },
-          ].map(f => (
-            <div key={f.field}>
-              <label className="block text-xs font-semibold text-charcoal-400 uppercase tracking-wider mb-1.5">
-                {f.label}
-              </label>
-              <input
-                type={f.type}
-                value={linkForm[f.field as keyof typeof linkForm]}
-                onChange={e => setLinkForm(x => ({ ...x, [f.field]: e.target.value }))}
-                className="input-field"
-              />
+      {/* Settings Modal */}
+      {isOwnProfile && (
+        <>
+          <Modal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} title="Profile Settings">
+            <div className="space-y-6">
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative group">
+                  <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} url={targetProfile.avatar_url} size="xl" />
+                  <label className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+                    <Edit3 size={24} className="text-white" />
+                    <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
+                  </label>
+                  {uploadingAvatar && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full">
+                      <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] uppercase font-bold text-charcoal-500 tracking-widest">Tap to change avatar</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-charcoal-400 uppercase tracking-wider mb-1.5">
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={settingsForm.displayName}
+                    onChange={e => setSettingsForm(s => ({ ...s, displayName: e.target.value }))}
+                    className="input-field"
+                    placeholder="Your Name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-charcoal-400 uppercase tracking-wider mb-1.5">
+                    Catchphrase / Trash Talk
+                  </label>
+                  <input
+                    type="text"
+                    value={settingsForm.catchphrase}
+                    onChange={e => setSettingsForm(s => ({ ...s, catchphrase: e.target.value }))}
+                    className="input-field"
+                    placeholder="e.g. Can't touch this! 🏏"
+                  />
+                  <p className="text-[10px] text-charcoal-500 mt-1">This will scroll across your profile banner.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => setShowSettingsModal(false)} className="btn-secondary flex-1">Cancel</button>
+                <button onClick={handleUpdateSettings} className="btn-primary flex-1">Save Changes</button>
+              </div>
             </div>
-          ))}
-          {linkError && <p className="text-danger-400 text-sm">{linkError}</p>}
-          <div className="flex gap-3">
-            <button onClick={() => setShowLinkModal(false)} className="btn-secondary flex-1">Cancel</button>
-            <button onClick={handleLinkGuest} disabled={linkLoading} className="btn-primary flex-1 flex items-center justify-center gap-2">
-              {linkLoading ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={16} />}
-              Link Account
-            </button>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
+          </Modal>
+
+          <Modal isOpen={showLinkModal} onClose={() => setShowLinkModal(false)} title="Link Guest Account">
+            <div className="space-y-4">
+              <p className="text-charcoal-400 text-sm">
+                Convert <strong className="text-charcoal-200">{linkTarget?.display_name}</strong>'s guest profile to a permanent account.
+              </p>
+              {[
+                { field: 'displayName', label: 'Display Name', type: 'text' },
+                { field: 'username', label: 'Username', type: 'text' },
+                { field: 'pin', label: 'PIN (4-6 digits)', type: 'password' },
+              ].map(f => (
+                <div key={f.field}>
+                  <label className="block text-xs font-semibold text-charcoal-400 uppercase tracking-wider mb-1.5">
+                    {f.label}
+                  </label>
+                  <input
+                    type={f.type}
+                    value={linkForm[f.field as keyof typeof linkForm]}
+                    onChange={e => setLinkForm(x => ({ ...x, [f.field]: e.target.value }))}
+                    className="input-field"
+                  />
+                </div>
+              ))}
+              {linkError && <p className="text-danger-400 text-sm">{linkError}</p>}
+              <div className="flex gap-3">
+                <button onClick={() => setShowLinkModal(false)} className="btn-secondary flex-1">Cancel</button>
+                <button onClick={handleLinkGuest} disabled={linkLoading} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                  {linkLoading ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={16} />}
+                  Link Account
+                </button>
+              </div>
+            </div>
+          </Modal>
+        </>
+      )}
+  </div>
+);
 }

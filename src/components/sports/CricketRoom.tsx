@@ -34,25 +34,34 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   const [milestoneMsg, setMilestoneMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const isMountedRef = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
+    return () => { 
+      isMountedRef.current = false;
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
   }, []);
 
-  const loadRecentEvents = useCallback(async (isMounted?: () => boolean) => {
+  const loadRecentEvents = useCallback(async (signal?: AbortSignal) => {
     const { data, error } = await supabase
       .from('match_events')
       .select('*')
       .eq('match_id', match.id)
       .eq('is_undone', false)
       .order('sequence_num', { ascending: false })
-      .limit(12);
+      .limit(12)
+      .abortSignal(signal);
 
-    if (isMounted && !isMounted()) return;
+    if (!isMountedRef.current) return;
 
     if (error) {
-      console.error("Error loading recent events:", error);
+      if (!error.message?.includes('AbortError')) {
+        console.error("Error loading recent events:", error);
+      }
       return;
     }
 
@@ -74,10 +83,17 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
     }
   }, [match.id]);
 
-  const loadInnings = useCallback(async (isMounted?: () => boolean) => {
+  const loadInnings = useCallback(async () => {
+    // Abort any pending requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     try {
       setLoading(true);
-      await loadRecentEvents(isMounted);
+      await loadRecentEvents(signal);
       const { data, error } = await supabase
         .from('cricket_innings')
         .select('*')
@@ -85,12 +101,15 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         .eq('is_completed', false)
         .order('innings_number', { ascending: false })
         .limit(1)
-        .maybeSingle();
+        .maybeSingle()
+        .abortSignal(signal);
 
-      if (isMounted && !isMounted()) return;
+      if (!isMountedRef.current) return;
 
       if (error) {
-        console.error("Error loading innings:", error);
+        if (!error.message?.includes('AbortError')) {
+          console.error("Error loading innings:", error);
+        }
         return;
       }
 
@@ -100,12 +119,15 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         const { data: stats, error: statsError } = await supabase
           .from('cricket_player_stats')
           .select('*')
-          .eq('innings_id', data.id);
+          .eq('innings_id', data.id)
+          .abortSignal(signal);
         
-        if (isMounted && !isMounted()) return;
+        if (!isMountedRef.current) return;
 
         if (statsError) {
-          console.error("Error loading stats:", statsError);
+          if (!statsError.message?.includes('AbortError')) {
+            console.error("Error loading stats:", statsError);
+          }
         } else {
           const map = new Map((stats || []).map((s: CricketPlayerStats) => [s.profile_id, s]));
           setPlayerStats(map);
@@ -115,17 +137,21 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         const { count, error: countError } = await supabase
           .from('cricket_innings')
           .select('*', { count: 'exact', head: true })
-          .eq('match_id', match.id);
+          .eq('match_id', match.id)
+          .abortSignal(signal);
         
-        if (isMounted && !isMounted()) return;
+        if (!isMountedRef.current) return;
 
         if (countError) {
-          console.error("Error checking innings count:", countError);
+          if (!countError.message?.includes('AbortError')) {
+            console.error("Error checking innings count:", countError);
+          }
         } else if (!count || count === 0) {
           await startFirstInnings();
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError' || err.message?.includes('AbortError')) return;
       console.error("Caught error in loadInnings:", err);
     } finally {
       if (isMountedRef.current) {
@@ -157,21 +183,29 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   };
 
   useEffect(() => { 
-    let mounted = true;
-    loadInnings(() => mounted); 
-    return () => { mounted = false; };
+    loadInnings(); 
   }, [loadInnings]);
 
   // Subscribe realtime
   useEffect(() => {
+    const handleRefresh = () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = setTimeout(() => {
+        loadInnings();
+      }, 200); // 200ms debounce
+    };
+
     const channel = supabase
       .channel(`cricket:${match.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cricket_innings', filter: `match_id=eq.${match.id}` }, () => loadInnings())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cricket_player_stats', filter: `match_id=eq.${match.id}` }, () => loadInnings())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${match.id}` }, () => loadRecentEvents())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cricket_innings', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cricket_player_stats', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [match.id, loadInnings, loadRecentEvents]);
+    return () => { 
+      supabase.removeChannel(channel);
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
+  }, [match.id, loadInnings]);
 
   const battingTeam = teams.find(t => t.id === innings?.batting_team_id);
   const bowlingTeam = teams.find(t => t.id === innings?.bowling_team_id);
@@ -311,11 +345,16 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         await supabase.from('cricket_player_stats').update({
           bowl_balls: (bowlerStat?.bowl_balls || 0) + 1,
           bowl_runs: (bowlerStat?.bowl_runs || 0) + runs + (extra === 'wide' || extra === 'noball' ? 1 : 0),
+          bowl_dots: (bowlerStat?.bowl_dots || 0) + (runs === 0 && !extra ? 1 : 0),
         }).eq('id', bowlerStatId);
       }
 
       // Record event
-      await recordEvent(match.id, 'delivery', { runs, extra: extra || null }, currentBatter1.id, undefined, currentUser?.id);
+      await recordEvent(match.id, 'delivery', { 
+        runs, 
+        extra: extra || null,
+        bowler_id: currentBowler?.id || null
+      }, currentBatter1.id, undefined, currentUser?.id);
       
       // Check for over completion
       if (countsAsBall && (innings.balls + 1) % 6 === 0) {
@@ -397,8 +436,60 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
     await loadInnings();
   };
 
+  const completeOverEarly = async () => {
+    if (!innings || !currentBowler) return;
+    const ballsInOver = innings.balls % 6;
+    if (ballsInOver === 0) return;
+
+    const remaining = 6 - ballsInOver;
+    setLoading(true);
+    try {
+      // Update innings
+      await supabase.from('cricket_innings').update({
+        balls: innings.balls + remaining,
+        updated_at: new Date().toISOString()
+      }).eq('id', innings.id);
+
+      // Update bowler stats
+      const bowlerStatId = await getOrCreatePlayerStat(currentBowler.id, innings.id);
+      const bowlerStat = playerStats.get(currentBowler.id);
+      await supabase.from('cricket_player_stats').update({
+        bowl_balls: (bowlerStat?.bowl_balls || 0) + remaining,
+        bowl_dots: (bowlerStat?.bowl_dots || 0) + remaining,
+      }).eq('id', bowlerStatId);
+
+      // Record dot ball events
+      const { count } = await supabase
+        .from('match_events')
+        .select('*', { count: 'exact', head: true })
+        .eq('match_id', match.id);
+
+      const startSeq = (count || 0) + 1;
+      const events = Array.from({ length: remaining }).map((_, i) => ({
+        match_id: match.id,
+        event_type: 'delivery',
+        event_data: { runs: 0, extra: null, auto_dot: true },
+        recorded_by: currentUser?.id || null,
+        sequence_num: startSeq + i,
+        is_undone: false
+      }));
+
+      await supabase.from('match_events').insert(events);
+    } catch (err) {
+      console.error("Error completing over early:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateBatter = async (slot: 1 | 2, profileId: string) => {
     if (!innings) return;
+    
+    // In backyard mode, if the current bowler is being selected as batter, complete their over first
+    if (ctx.isBackyard && profileId === currentBowler?.id && (innings.balls % 6 !== 0)) {
+      await completeOverEarly();
+    }
+
     const field = slot === 1 ? 'current_batter1_id' : 'current_batter2_id';
     await supabase.from('cricket_innings').update({ [field]: profileId || null }).eq('id', innings.id);
     await loadInnings();
@@ -406,6 +497,12 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
   const updateBowler = async (profileId: string) => {
     if (!innings) return;
+
+    // In backyard mode, if changing bowler mid-over, complete the over for the previous bowler
+    if (ctx.isBackyard && currentBowler && profileId !== currentBowler.id && (innings.balls % 6 !== 0)) {
+      await completeOverEarly();
+    }
+
     await supabase.from('cricket_innings').update({ current_bowler_id: profileId || null }).eq('id', innings.id);
     await loadInnings();
   };
@@ -425,35 +522,53 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-charcoal-950 overflow-y-auto scrollbar-thin scrollbar-thumb-charcoal-700 scrollbar-track-transparent">
-      {/* Milestone banner */}
-      {milestoneMsg && (
-        <div className="bg-warning-500/20 border-b border-warning-500/30 px-4 py-2 text-warning-300 text-center text-sm font-semibold animate-slide-down">
-          🏏 {milestoneMsg}
-        </div>
-      )}
+    <div className="flex flex-col h-screen overflow-hidden bg-charcoal-950">
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-charcoal-700 scrollbar-track-transparent pb-4">
+        {/* Milestone banner */}
+        {milestoneMsg && (
+          <div className="bg-warning-500/20 border-b border-warning-500/30 px-4 py-2 text-warning-300 text-center text-sm font-semibold animate-slide-down">
+            🏏 {milestoneMsg}
+          </div>
+        )}
 
-      {/* STACK 1: BATTING SUMMARY & STATS */}
-      <div className="flex flex-col bg-charcoal-900/20">
+        {/* STACK 1: BATTING SUMMARY & STATS */}
+        <div className="flex flex-col bg-charcoal-900/20">
         {/* Broadcast Header Ticker */}
         <div className="relative bg-charcoal-900 border-b-2 border-cricket shadow-2xl z-20">
           <div className="flex flex-col md:flex-row items-stretch min-h-[72px]">
-            {/* Team & Score Block */}
+            {/* Team & Score Block / Individual Stats */}
             <div className="flex flex-row md:flex-col justify-center px-6 py-3 md:py-0 border-r border-charcoal-800 bg-gradient-to-br from-charcoal-900 via-charcoal-800 to-charcoal-900 min-w-[200px] relative overflow-hidden group">
               <div className="absolute inset-0 bg-cricket/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="flex flex-col flex-1">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cricket/90 mb-0.5 drop-shadow-sm">
-                  {battingTeam?.team_name || 'Innings 1'}
-                </span>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-mono font-black leading-none tracking-tighter text-white">
-                    {innings?.total_runs ?? 0}
+              {ctx.isBackyard ? (
+                <div className="flex flex-col flex-1">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cricket/90 mb-0.5 drop-shadow-sm">
+                    {currentBatter1?.display_name || 'Active Batter'}
                   </span>
-                  <span className="text-2xl font-mono font-bold text-danger-500">
-                    -{innings?.wickets ?? 0}
-                  </span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-mono font-black leading-none tracking-tighter text-white">
+                      {playerStats.get(currentBatter1?.id || '')?.bat_runs ?? 0}
+                    </span>
+                    <span className="text-2xl font-mono font-bold text-charcoal-500">
+                      ({playerStats.get(currentBatter1?.id || '')?.bat_balls ?? 0})
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex flex-col flex-1">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cricket/90 mb-0.5 drop-shadow-sm">
+                    {battingTeam?.team_name || 'Innings 1'}
+                  </span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-mono font-black leading-none tracking-tighter text-white">
+                      {innings?.total_runs ?? 0}
+                    </span>
+                    <span className="text-2xl font-mono font-bold text-danger-500">
+                      -{innings?.wickets ?? 0}
+                    </span>
+                  </div>
+                </div>
+              )}
               {/* Mobile Over Info */}
               <div className="md:hidden flex flex-col items-end justify-center">
                 <span className="text-[10px] font-bold text-charcoal-500 uppercase tracking-wider">Overs</span>
@@ -469,10 +584,19 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                   <span className="text-[10px] font-bold text-charcoal-500 uppercase tracking-wider">Overs</span>
                   <span className="text-lg font-mono font-bold text-charcoal-50 leading-tight">{overs}</span>
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-charcoal-500 uppercase tracking-wider">CRR</span>
-                  <span className="text-lg font-mono font-bold text-success-400 leading-tight">{crr}</span>
-                </div>
+                {ctx.isBackyard && currentBowler ? (
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-success-500 uppercase tracking-wider">{currentBowler.display_name}</span>
+                    <span className="text-lg font-mono font-bold text-success-400 leading-tight">
+                      {playerStats.get(currentBowler.id)?.bowl_wickets ?? 0}/{playerStats.get(currentBowler.id)?.bowl_runs ?? 0}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-charcoal-500 uppercase tracking-wider">CRR</span>
+                    <span className="text-lg font-mono font-bold text-success-400 leading-tight">{crr}</span>
+                  </div>
+                )}
               </div>
 
               {/* Vertical Divider */}
@@ -544,9 +668,9 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         </div>
 
         {/* Live Batters Tickers */}
-        <div className="grid grid-cols-2 gap-px bg-charcoal-800/50 border-b border-charcoal-800 relative z-10">
+        <div className={`grid ${ctx.isBackyard ? 'grid-cols-1' : 'grid-cols-2'} gap-px bg-charcoal-800/50 border-b border-charcoal-800 relative z-10`}>
           <ActivePlayerOverlay
-            label="STRIKER"
+            label={ctx.isBackyard ? "ACTIVE BATTER" : "STRIKER"}
             profile={currentBatter1}
             players={battingPlayers}
             onChange={id => updateBatter(1, id)}
@@ -555,15 +679,17 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
             isFacing={true}
             disabled={isSpectator}
           />
-          <ActivePlayerOverlay
-            label="NON-STRIKER"
-            profile={currentBatter2}
-            players={battingPlayers}
-            onChange={id => updateBatter(2, id)}
-            stat={currentBatter2 ? playerStats.get(currentBatter2.id) : undefined}
-            type="batter"
-            disabled={isSpectator}
-          />
+          {!ctx.isBackyard && (
+            <ActivePlayerOverlay
+              label="NON-STRIKER"
+              profile={currentBatter2}
+              players={battingPlayers}
+              onChange={id => updateBatter(2, id)}
+              stat={currentBatter2 ? playerStats.get(currentBatter2.id) : undefined}
+              type="batter"
+              disabled={isSpectator}
+            />
+          )}
         </div>
 
         {/* Full Batting Scorecard */}
@@ -633,19 +759,93 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         </div>
       </div>
 
-      {/* STACK 2: SCORING UI CONTROLS */}
+      {/* STACK 3: BOWLING STATS (Moved into scrollable area) */}
+        <div className="flex flex-col bg-charcoal-900/40">
+          {/* Active Bowler Ticker */}
+          <div className="bg-charcoal-800/50 border-b border-charcoal-800">
+            <ActivePlayerOverlay
+              label="CURRENT BOWLER"
+              profile={currentBowler}
+              players={bowlingPlayers}
+              onChange={updateBowler}
+              stat={currentBowler ? playerStats.get(currentBowler.id) : undefined}
+              type="bowler"
+              disabled={isSpectator}
+            />
+          </div>
+
+          {/* Bowling Analysis Table */}
+          <div className="p-4 space-y-3">
+            <div className="flex items-center justify-between mb-2 px-2">
+              <h4 className="text-[10px] font-black text-charcoal-500 uppercase tracking-[0.2em]">Bowling Analysis</h4>
+              <div className="flex gap-4">
+                <span className="text-[9px] font-bold text-charcoal-600 uppercase w-10 text-right">O</span>
+                <span className="text-[9px] font-bold text-charcoal-600 uppercase w-8 text-right">R</span>
+                <span className="text-[9px] font-bold text-charcoal-600 uppercase w-8 text-right">W</span>
+                <span className="text-[9px] font-bold text-charcoal-600 uppercase w-12 text-right hidden sm:block">ECON</span>
+              </div>
+            </div>
+            
+            <div className="space-y-1.5">
+              {bowlingPlayers.map(p => {
+                const stat = playerStats.get(p.id);
+                const isCurrent = p.id === innings?.current_bowler_id;
+                if (!stat && !isCurrent) return null;
+                
+                const overs = stat ? `${Math.floor(stat.bowl_balls / 6)}.${stat.bowl_balls % 6}` : '0.0';
+                const econ = stat && stat.bowl_balls > 0 ? ((stat.bowl_runs / stat.bowl_balls) * 6).toFixed(2) : '0.00';
+                
+                return (
+                  <div key={p.id} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-500 ${
+                    isCurrent 
+                      ? 'bg-charcoal-800 border-l-4 border-success-500 shadow-[0_4px_20px_rgba(34,197,94,0.1)]' 
+                      : 'bg-charcoal-900/40 border border-charcoal-800/50 hover:bg-charcoal-800/20'
+                  }`}>
+                    <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold truncate ${isCurrent ? 'text-white' : 'text-charcoal-300'}`}>
+                          {p.display_name}
+                        </span>
+                        {isCurrent && <span className="text-[10px] font-black text-success-500 uppercase tracking-widest animate-pulse">Bowling</span>}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 sm:gap-6 font-mono">
+                      <div className="w-10 text-right">
+                        <div className={`text-sm font-bold leading-none ${isCurrent ? 'text-white' : 'text-charcoal-200'}`}>{overs}</div>
+                      </div>
+                      <div className="w-8 text-right">
+                        <div className="text-sm font-bold text-charcoal-400 leading-none">{stat?.bowl_runs ?? 0}</div>
+                      </div>
+                      <div className="w-8 text-right">
+                        <div className="text-lg font-black text-danger-400 leading-none">{stat?.bowl_wickets ?? 0}</div>
+                      </div>
+                      <div className="w-12 text-right hidden sm:block">
+                        <div className="text-sm font-bold text-charcoal-600 leading-none">{econ}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+      </div>
+      </div>
+
+      {/* STACK 2: FIXED SCORING UI CONTROLS (Pinned to bottom) */}
       {!isSpectator && (match.status === 'active' || isAdmin) && (
-        <div className="bg-charcoal-900 border-y border-charcoal-800 p-4 shadow-[0_0_50px_rgba(0,0,0,0.3)] z-30">
-          <div className="flex flex-col gap-4 max-w-2xl mx-auto">
-            <h4 className="text-[10px] font-black text-charcoal-500 uppercase tracking-[0.2em] text-center mb-1">Scoring Interface</h4>
+        <div className="sticky bottom-0 bg-charcoal-900/95 backdrop-blur-md border-t border-charcoal-800 py-2 px-3 safe-bottom z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-col gap-2 max-w-2xl mx-auto">
             {/* Run buttons */}
-            <div className="grid grid-cols-6 gap-2">
+            <div className="grid grid-cols-6 gap-1.5">
               {[0, 1, 2, 3, 4, 6].map(r => (
                 <button
                   key={r}
                   onClick={() => handleDelivery(r)}
                   disabled={loading || !currentBatter1}
-                  className={`score-btn font-mono font-black text-xl h-14 ${
+                  className={`score-btn font-mono font-black text-lg h-12 ${
                     r === 4 ? 'border-success-600/50 text-success-400 bg-success-600/5' :
                     r === 6 ? 'border-warning-500/50 text-warning-400 bg-warning-500/5' : 
                     'bg-charcoal-800/50'
@@ -656,14 +856,14 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
               ))}
             </div>
             {/* Extra/Wicket buttons */}
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-5 gap-1.5">
               {['Wide', 'No Ball', 'Bye', 'Leg Bye'].map(extra => (
                 <button
                   key={extra}
                   onClick={() => handleDelivery(extra === 'Wide' || extra === 'No Ball' ? 1 : 1,
                     extra.toLowerCase().replace(' ', '') as 'wide' | 'noball' | 'bye' | 'legbye')}
                   disabled={loading || !currentBatter1}
-                  className="score-btn text-[10px] text-warning-300 border-warning-600/30 h-12 bg-charcoal-800/30"
+                  className="score-btn text-[9px] text-warning-300 border-warning-600/30 h-10 bg-charcoal-800/30 uppercase font-black tracking-tighter"
                 >
                   {extra}
                 </button>
@@ -671,7 +871,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
               <button
                 onClick={() => setShowWicketModal(true)}
                 disabled={loading || !currentBatter1 || !currentBowler}
-                className="score-btn bg-danger-900/40 border-danger-600/50 text-danger-400 font-black text-xs h-12"
+                className="score-btn bg-danger-900/40 border-danger-600/50 text-danger-400 font-black text-[9px] h-10 uppercase"
               >
                 WICKET
               </button>
@@ -681,14 +881,14 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
               <button
                 onClick={handleUndo}
                 disabled={loading}
-                className="btn-secondary flex-1 py-3 text-xs font-bold uppercase tracking-wider bg-charcoal-800"
+                className="btn-secondary flex-1 py-2 text-[10px] font-black uppercase tracking-widest bg-charcoal-800 h-9"
               >
-                ↩ Undo Ball
+                Undo Ball
               </button>
               <button
                 onClick={switchInnings}
                 disabled={loading}
-                className="btn-secondary flex-none px-6 py-3 text-xs font-bold uppercase tracking-wider text-accent-400 border-accent-500/20 bg-accent-500/5"
+                className="btn-secondary flex-none px-4 py-2 text-[10px] font-black uppercase tracking-widest text-accent-400 border-accent-500/20 bg-accent-500/5 h-9"
               >
                 Innings →
               </button>
@@ -696,80 +896,6 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
           </div>
         </div>
       )}
-
-      {/* STACK 3: BOWLING STATS */}
-      <div className="flex flex-col bg-charcoal-900/40 pb-12">
-        {/* Active Bowler Ticker */}
-        <div className="bg-charcoal-800/50 border-b border-charcoal-800">
-          <ActivePlayerOverlay
-            label="CURRENT BOWLER"
-            profile={currentBowler}
-            players={bowlingPlayers}
-            onChange={updateBowler}
-            stat={currentBowler ? playerStats.get(currentBowler.id) : undefined}
-            type="bowler"
-            disabled={isSpectator}
-          />
-        </div>
-
-        {/* Bowling Analysis Table */}
-        <div className="p-4 space-y-3">
-          <div className="flex items-center justify-between mb-2 px-2">
-            <h4 className="text-[10px] font-black text-charcoal-500 uppercase tracking-[0.2em]">Bowling Analysis</h4>
-            <div className="flex gap-4">
-              <span className="text-[9px] font-bold text-charcoal-600 uppercase w-10 text-right">O</span>
-              <span className="text-[9px] font-bold text-charcoal-600 uppercase w-8 text-right">R</span>
-              <span className="text-[9px] font-bold text-charcoal-600 uppercase w-8 text-right">W</span>
-              <span className="text-[9px] font-bold text-charcoal-600 uppercase w-12 text-right hidden sm:block">ECON</span>
-            </div>
-          </div>
-          
-          <div className="space-y-1.5">
-            {bowlingPlayers.map(p => {
-              const stat = playerStats.get(p.id);
-              const isCurrent = p.id === innings?.current_bowler_id;
-              if (!stat && !isCurrent) return null;
-              
-              const overs = stat ? `${Math.floor(stat.bowl_balls / 6)}.${stat.bowl_balls % 6}` : '0.0';
-              const econ = stat && stat.bowl_balls > 0 ? ((stat.bowl_runs / stat.bowl_balls) * 6).toFixed(2) : '0.00';
-              
-              return (
-                <div key={p.id} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-500 ${
-                  isCurrent 
-                    ? 'bg-charcoal-800 border-l-4 border-success-500 shadow-[0_4px_20px_rgba(34,197,94,0.1)]' 
-                    : 'bg-charcoal-900/40 border border-charcoal-800/50 hover:bg-charcoal-800/20'
-                }`}>
-                  <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-bold truncate ${isCurrent ? 'text-white' : 'text-charcoal-300'}`}>
-                        {p.display_name}
-                      </span>
-                      {isCurrent && <span className="text-[10px] font-black text-success-500 uppercase tracking-widest animate-pulse">Bowling</span>}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 sm:gap-6 font-mono">
-                    <div className="w-10 text-right">
-                      <div className={`text-sm font-bold leading-none ${isCurrent ? 'text-white' : 'text-charcoal-200'}`}>{overs}</div>
-                    </div>
-                    <div className="w-8 text-right">
-                      <div className="text-sm font-bold text-charcoal-400 leading-none">{stat?.bowl_runs ?? 0}</div>
-                    </div>
-                    <div className="w-8 text-right">
-                      <div className="text-lg font-black text-danger-400 leading-none">{stat?.bowl_wickets ?? 0}</div>
-                    </div>
-                    <div className="w-12 text-right hidden sm:block">
-                      <div className="text-sm font-bold text-charcoal-600 leading-none">{econ}</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
 
       {/* Wicket Modal */}
       <Modal isOpen={showWicketModal} onClose={() => setShowWicketModal(false)} title="Wicket!">

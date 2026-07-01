@@ -23,12 +23,18 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
   const [events, setEvents] = useState<MatchEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const isMountedRef = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showRoundWinner, setShowRoundWinner] = useState(false);
   const [roundWinnerName, setRoundWinnerName] = useState('');
 
   useEffect(() => {
     isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
+    return () => { 
+      isMountedRef.current = false;
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
   }, []);
 
   const matchPlayers = useMemo(() => 
@@ -37,7 +43,13 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       .filter(Boolean) as Profile[]
   , [players, profiles]);
 
-  const loadData = useCallback(async (isMounted?: () => boolean) => {
+  const loadData = useCallback(async () => {
+    // Abort any pending requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -45,12 +57,15 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
         .select('*')
         .eq('match_id', match.id)
         .eq('is_undone', false)
-        .order('sequence_num', { ascending: true });
+        .order('sequence_num', { ascending: true })
+        .abortSignal(abortControllerRef.current.signal);
       
-      if (isMounted && !isMounted()) return;
+      if (!isMountedRef.current) return;
       
       if (error) {
-        console.error("Error loading chip-off events:", error);
+        if (!error.message?.includes('AbortError')) {
+          console.error("Error loading chip-off events:", error);
+        }
         return;
       }
       
@@ -58,7 +73,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
         setEvents(data);
       }
     } catch (err: any) {
-      if (err.name === 'AbortError' || err.message === 'AbortError') return;
+      if (err.name === 'AbortError' || err.message?.includes('AbortError')) return;
       console.error("Error loading chip-off events:", err);
     } finally {
       if (isMountedRef.current) {
@@ -68,18 +83,31 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
   }, [match.id]);
 
   useEffect(() => { 
-    let mounted = true;
-    loadData(() => mounted); 
-    return () => { mounted = false; };
+    loadData(); 
   }, [loadData]);
 
   // Subscribe to events
   useEffect(() => {
+    const handleRefresh = () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = setTimeout(() => {
+        loadData();
+      }, 200); // 200ms debounce
+    };
+
     const channel = supabase
       .channel(`chipoff:${match.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${match.id}` }, () => loadData())
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'match_events', 
+        filter: `match_id=eq.${match.id}` 
+      }, () => handleRefresh())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+      supabase.removeChannel(channel);
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
   }, [match.id, loadData]);
 
   // Game Logic Derived State

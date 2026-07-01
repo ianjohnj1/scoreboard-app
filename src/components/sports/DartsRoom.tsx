@@ -34,13 +34,19 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
   });
   const [inputScore, setInputScore] = useState('');
   const [loading, setLoading] = useState(false);
+  const [multiplier, setMultiplier] = useState<1 | 2 | 3>(1);
 
   const currentPlayer = matchPlayers[state.currentPlayerIdx];
 
-  const addDart = async (score: number) => {
+  const addDart = async (baseScore: number) => {
     if (!currentPlayer || state.winner || loading) return;
+    
+    const score = baseScore * multiplier;
     const newDarts = [...state.currentDarts, score];
     const remaining = state.scores[currentPlayer.id] - score;
+    
+    // Reset multiplier after a shot
+    setMultiplier(1);
 
     if (remaining < 0 || remaining === 1) {
       // Bust
@@ -137,7 +143,25 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
       {!isSpectator && (match.status === 'active' || isAdmin) && !state.winner && (
         <div className="border-t border-charcoal-700 bg-charcoal-800 p-3 safe-bottom">
           <div className="flex items-center gap-2 mb-2">
-            <div className="flex items-center gap-2 flex-1">
+            <div className="flex items-center gap-1.5 flex-1">
+              <button
+                onClick={() => setMultiplier(prev => prev === 2 ? 1 : 2)}
+                className={`flex-1 py-2 rounded-lg font-black text-xs transition-all border-2 ${
+                  multiplier === 2 ? 'bg-warning-500 border-warning-400 text-charcoal-900 shadow-lg shadow-warning-500/20' : 'bg-charcoal-700 border-charcoal-600 text-charcoal-400'
+                }`}
+              >
+                DOUBLE
+              </button>
+              <button
+                onClick={() => setMultiplier(prev => prev === 3 ? 1 : 3)}
+                className={`flex-1 py-2 rounded-lg font-black text-xs transition-all border-2 ${
+                  multiplier === 3 ? 'bg-danger-500 border-danger-400 text-white shadow-lg shadow-danger-500/20' : 'bg-charcoal-700 border-charcoal-600 text-charcoal-400'
+                }`}
+              >
+                TRIPLE
+              </button>
+            </div>
+            <div className="flex items-center gap-2 flex-1 justify-end">
               {state.currentDarts.map((d, i) => (
                 <span key={i} className="font-mono font-bold bg-accent-700/50 px-3 py-1.5 rounded-lg text-accent-200">{d}</span>
               ))}
@@ -145,9 +169,6 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
                 <span key={i} className="font-mono bg-charcoal-700 border border-dashed border-charcoal-600 px-3 py-1.5 rounded-lg text-charcoal-600">-</span>
               ))}
             </div>
-            <span className="text-charcoal-400 text-sm font-mono">
-              -{state.currentDarts.reduce((s, d) => s + d, 0)}
-            </span>
           </div>
           <div className="grid grid-cols-5 gap-2 mb-2">
             {QUICK_SCORES.map(s => (

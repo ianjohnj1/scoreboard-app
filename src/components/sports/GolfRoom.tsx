@@ -24,11 +24,17 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
   const [selectedPlayer, setSelectedPlayer] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(false);
   const isMountedRef = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
+    return () => { 
+      isMountedRef.current = false;
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
   }, []);
 
   const numHoles = (match.house_rules as Record<string, unknown>)?.holes as number ?? 18;
@@ -72,7 +78,14 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
     }
   };
 
-  const loadData = useCallback(async (isMounted?: () => boolean) => {
+  const loadData = useCallback(async () => {
+    // Abort any pending requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     try {
       setLoading(true);
       // Ensure holes exist
@@ -80,12 +93,16 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
         .from('golf_holes')
         .select('*')
         .eq('match_id', match.id)
-        .order('hole_number');
+        .order('hole_number')
+        .abortSignal(signal);
 
-      if (isMounted && !isMounted()) return;
+      if (!isMountedRef.current) return;
 
       if (fetchError) {
-        throw fetchError;
+        if (!fetchError.message?.includes('AbortError')) {
+          throw fetchError;
+        }
+        return;
       }
 
       if (!existingHoles || existingHoles.length === 0) {
@@ -100,12 +117,16 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
       const { data: scoreData, error: scoresError } = await supabase
         .from('golf_scores')
         .select('*')
-        .eq('match_id', match.id);
+        .eq('match_id', match.id)
+        .abortSignal(signal);
 
-      if (isMounted && !isMounted()) return;
+      if (!isMountedRef.current) return;
 
       if (scoresError) {
-        throw scoresError;
+        if (!scoresError.message?.includes('AbortError')) {
+          throw scoresError;
+        }
+        return;
       }
 
       const scoreMap = new Map<string, GolfScore>();
@@ -114,7 +135,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
       }
       setScores(scoreMap);
     } catch (error: any) {
-      if (error.name === 'AbortError' || error.message === 'AbortError') return;
+      if (error.name === 'AbortError' || error.message?.includes('AbortError')) return;
       console.error("Error loading golf data:", error);
     } finally {
       if (isMountedRef.current) {
@@ -124,10 +145,28 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
   }, [match.id, numHoles, isSpectator]);
 
   useEffect(() => { 
-    let mounted = true;
-    loadData(() => mounted); 
-    return () => { mounted = false; };
+    loadData(); 
   }, [loadData]);
+
+  // Subscribe to changes
+  useEffect(() => {
+    const handleRefresh = () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = setTimeout(() => {
+        loadData();
+      }, 200); // 200ms debounce
+    };
+
+    const channel = supabase
+      .channel(`golf:${match.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'golf_holes', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'golf_scores', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
+      .subscribe();
+    return () => { 
+      supabase.removeChannel(channel);
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
+  }, [match.id, loadData]);
 
   const updatePar = async (holeId: string, par: number) => {
     await supabase.from('golf_holes').update({ par }).eq('id', holeId);
