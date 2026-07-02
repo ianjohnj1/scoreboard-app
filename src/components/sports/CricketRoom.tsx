@@ -17,7 +17,7 @@ interface CricketHouseRules {
 }
 
 export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const houseRules = (match.house_rules || {}) as CricketHouseRules;
 
   const [innings, setInnings] = useState<CricketInnings | null>(null);
@@ -835,7 +835,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
       </div>
 
       {/* STACK 2: FIXED SCORING UI CONTROLS (Pinned to bottom) */}
-      {!isSpectator && (match.status === 'active' || isAdmin) && (
+      {!isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && (
         <div className="sticky bottom-0 bg-charcoal-900/95 backdrop-blur-md border-t border-charcoal-800 py-2 px-3 safe-bottom z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
           <div className="flex flex-col gap-2 max-w-2xl mx-auto">
             {/* Run buttons */}

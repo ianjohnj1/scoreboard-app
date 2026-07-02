@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X } from 'lucide-react';
+import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X, Monitor } from 'lucide-react';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getSportIcon, getSportLabel } from '../lib/matches';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,6 +28,7 @@ export type MatchContext = {
   currentUser: Profile | null;
   isAdmin: boolean;
   isBackyard: boolean;
+  isTvDisplayMode: boolean;
   onRefresh: () => void;
 };
 
@@ -50,6 +51,7 @@ export default function MatchRoomPage() {
   const [playerSearch, setPlayerSearch] = useState('');
   const [guestName, setGuestName] = useState('');
   const [isAddingGuest, setIsAddingGuest] = useState(false);
+  const [isTvDisplayMode, setIsTvDisplayMode] = useState(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -274,6 +276,7 @@ export default function MatchRoomPage() {
     currentUser,
     isAdmin,
     isBackyard: match.house_rules?.variant === 'backyard',
+    isTvDisplayMode,
     onRefresh: loadMatch
   };
   
@@ -281,9 +284,20 @@ export default function MatchRoomPage() {
   const SportRoom = getSportRoom(match);
 
   return (
-    <div className="min-h-screen bg-charcoal-900 flex flex-col">
+    <div className="min-h-screen bg-charcoal-900 flex flex-col relative">
+      {/* TV Mode Escape Badge */}
+      {isTvDisplayMode && (
+        <button
+          onClick={() => setIsTvDisplayMode(false)}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-accent-600 text-white px-6 py-3 rounded-full font-black uppercase tracking-widest text-xs shadow-[0_0_30px_rgba(37,99,235,0.4)] animate-pulse flex items-center gap-2 border-2 border-accent-400/50"
+        >
+          <Monitor size={16} />
+          TV Mode Active — Click to Show Scoring Buttons
+        </button>
+      )}
+
       {/* Header */}
-      <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-3 safe-top flex-shrink-0">
+      <div className={`bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-3 safe-top flex-shrink-0 transition-opacity duration-500 ${isTvDisplayMode ? 'opacity-0 pointer-events-none h-0 p-0 border-0' : 'opacity-100'}`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/')}
@@ -351,6 +365,13 @@ export default function MatchRoomPage() {
           >
             {match.status === 'paused' ? <Play size={18} /> : <Pause size={18} />}
             {match.status === 'paused' ? 'Resume Match' : 'Pause Match'}
+          </button>
+          <button
+            onClick={() => { setIsTvDisplayMode(true); setShowMenu(false); }}
+            className="w-full btn-secondary flex items-center gap-3 justify-start"
+          >
+            <Monitor size={18} />
+            TV Display Mode
           </button>
           <button
             onClick={() => { setShowMenu(false); setShowEditRoster(true); }}

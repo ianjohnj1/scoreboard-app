@@ -11,7 +11,7 @@ type TTState = {
 };
 
 export default function TableTennisRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const winPoints = (match.house_rules as Record<string, unknown>)?.win_points as number ?? 11;
 
   const isTeam = teams.length >= 2;
@@ -52,11 +52,11 @@ export default function TableTennisRoom({ ctx }: { ctx: MatchContext }) {
         {[0, 1].map(idx => (
           <button
             key={idx}
-            onClick={() => !isSpectator && (match.status === 'active' || isAdmin) && addPoint(idx as 0 | 1)}
+            onClick={() => !isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && addPoint(idx as 0 | 1)}
             className={`flex-1 flex flex-col items-center justify-center gap-3 transition-colors active:opacity-80
-              ${isSpectator ? '' : 'cursor-pointer'}`}
+              ${(isSpectator || isTvDisplayMode) ? '' : 'cursor-pointer'}`}
             style={{ backgroundColor: `${getColor(idx === 0 ? p0 : p1, idx)}15` }}
-            disabled={isSpectator}
+            disabled={isSpectator || isTvDisplayMode}
           >
             <div className="font-black text-8xl font-mono" style={{ color: getColor(idx === 0 ? p0 : p1, idx) }}>
               {state.scores[idx]}
@@ -70,9 +70,11 @@ export default function TableTennisRoom({ ctx }: { ctx: MatchContext }) {
           </button>
         ))}
       </div>
-      <div className="text-center py-2 bg-charcoal-800 border-t border-charcoal-700 text-charcoal-400 text-xs">
-        Sets: {state.sets[0]} — {state.sets[1]} · Tap court side to add point
-      </div>
+      {!isTvDisplayMode && (
+        <div className="text-center py-2 bg-charcoal-800 border-t border-charcoal-700 text-charcoal-400 text-xs">
+          Sets: {state.sets[0]} — {state.sets[1]} · Tap court side to add point
+        </div>
+      )}
     </div>
   );
 }

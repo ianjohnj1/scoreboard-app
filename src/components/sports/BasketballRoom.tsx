@@ -5,7 +5,7 @@ import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
 
 export default function BasketballRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const [scores, setScores] = useState<[number, number]>([0, 0]);
 
   const addPoints = async (teamIdx: 0 | 1, pts: 1 | 2 | 3) => {
@@ -25,7 +25,7 @@ export default function BasketballRoom({ ctx }: { ctx: MatchContext }) {
             <div key={idx} className={`flex-1 flex flex-col items-center justify-between p-4 ${idx === 0 ? 'border-r border-charcoal-700' : ''}`}>
               <p className="font-bold text-charcoal-200 text-lg">{team?.team_name || `Team ${idx + 1}`}</p>
               <div className="font-black text-8xl font-mono" style={{ color }}>{scores[idx]}</div>
-              {!isSpectator && (match.status === 'active' || isAdmin) && (
+              {!isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && (
                 <div className="grid grid-cols-3 gap-2 w-full">
                   {[1, 2, 3].map(pts => (
                     <button

@@ -6,7 +6,7 @@ import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
 
 export default function CardsRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const matchPlayers = players.map(p => profiles.get(p.profile_id)).filter(Boolean) as Profile[];
   const [rounds, setRounds] = useState<Record<string, number>[]>([]);
   const [tempRound, setTempRound] = useState<Record<string, string>>({});
@@ -59,7 +59,7 @@ export default function CardsRoom({ ctx }: { ctx: MatchContext }) {
         </table>
       </div>
 
-      {!isSpectator && (match.status === 'active' || isAdmin) && (
+      {!isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && (
         <div className="border-t border-charcoal-700 bg-charcoal-800 p-3 safe-bottom">
           {adding ? (
             <div className="space-y-2">

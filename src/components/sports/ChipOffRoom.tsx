@@ -14,7 +14,7 @@ interface ChipOffRules {
 }
 
 export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const rules = (match.house_rules || {}) as ChipOffRules;
   const ballsPerTurn = rules.balls_per_turn || 3;
   const totalRounds = rules.total_rounds || 9;
@@ -257,7 +257,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
         {/* Scoring Pad */}
-        {!gameStats.isGameOver && !isSpectator && (
+        {!gameStats.isGameOver && !isSpectator && !isTvDisplayMode && (
           <div className="space-y-4 max-w-md mx-auto">
             <div className="grid grid-cols-2 gap-3">
               <button

@@ -14,7 +14,7 @@ type DartsState = {
 };
 
 export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
 
   const startScore = (match.house_rules as Record<string, unknown>)?.start_score as number ?? 501;
   const doubleOut = (match.house_rules as Record<string, unknown>)?.double_out as boolean ?? true;
@@ -140,7 +140,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
       </div>
 
       {/* Controls */}
-      {!isSpectator && (match.status === 'active' || isAdmin) && !state.winner && (
+      {!isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && !state.winner && (
         <div className="border-t border-charcoal-700 bg-charcoal-800 p-3 safe-bottom">
           <div className="flex items-center gap-2 mb-2">
             <div className="flex items-center gap-1.5 flex-1">

@@ -16,7 +16,7 @@ const SCORE_LABELS: Record<number, { label: string; color: string }> = {
 };
 
 export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
 
   const [holes, setHoles] = useState<GolfHole[]>([]);
   const [scores, setScores] = useState<Map<string, GolfScore>>(new Map()); // key: `${holeId}:${profileId}`
@@ -267,7 +267,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                   </p>
                 </div>
                 
-                {!isSpectator && (match.status !== 'completed' || isAdmin) && (
+                {!isSpectator && !isTvDisplayMode && (match.status !== 'completed' || isAdmin) && (
                   <div className="space-y-3">
                     <button
                       onClick={initializeHoles}
@@ -325,7 +325,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                       <td key={player.id} className="px-2 py-2.5 text-center">
                         <button
                           onClick={() => {
-                            if (isSpectator) return;
+                            if (isSpectator || isTvDisplayMode) return;
                             if (match.status === 'completed' && !isAdmin) return;
                             setSelectedHole(hole);
                             setSelectedPlayer(player);

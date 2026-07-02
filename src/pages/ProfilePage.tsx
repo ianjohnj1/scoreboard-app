@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   User, LogOut, Settings, Star, BarChart2, Users,
-  Link as LinkIcon, Shield, Edit3, Check, ArrowLeft
+  Link as LinkIcon, Shield, Edit3, Check, ArrowLeft, ArrowRightLeft
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { linkGuestAccount, getAllProfiles } from '../lib/auth';
@@ -30,6 +30,9 @@ export default function ProfilePage() {
   const [settingsForm, setSettingsForm] = useState({ displayName: '', catchphrase: '' });
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [currentUserStats, setCurrentUserStats] = useState<PlayerCareerAnalytics[]>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
 
   const isOwnProfile = !id || id === currentUser?.id;
 
@@ -199,6 +202,25 @@ export default function ProfilePage() {
     }
   };
 
+  const handleCompare = async () => {
+    if (!currentUser) return;
+    setCompareLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('player_career_analytics')
+        .select('*')
+        .eq('profile_id', currentUser.id)
+        .eq('is_practice', isPracticeFilter);
+      
+      if (!error && data) {
+        setCurrentUserStats(data);
+        setShowCompareModal(true);
+      }
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
   if (!targetProfile) return null;
 
   const totalWins = stats.reduce((s, x) => s + x.matches_won, 0);
@@ -234,7 +256,7 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
-          {isOwnProfile && (
+          {isOwnProfile ? (
             <div className="flex gap-2">
               <button
                 onClick={() => setShowSettingsModal(true)}
@@ -249,6 +271,19 @@ export default function ProfilePage() {
                 <LogOut size={20} />
               </button>
             </div>
+          ) : currentUser && (
+            <button
+              onClick={handleCompare}
+              disabled={compareLoading}
+              className="flex items-center gap-2 bg-accent-600 hover:bg-accent-500 text-white px-4 py-2 rounded-xl font-bold text-sm transition-all shadow-lg shadow-accent-900/20 active:scale-95"
+            >
+              {compareLoading ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <ArrowRightLeft size={18} />
+              )}
+              Compare
+            </button>
           )}
         </div>
       </div>
@@ -528,6 +563,118 @@ export default function ProfilePage() {
           </Modal>
         </>
       )}
-  </div>
-);
+
+      {/* Comparison Modal */}
+      <Modal 
+        isOpen={showCompareModal} 
+        onClose={() => setShowCompareModal(false)} 
+        title="Player Comparison"
+        maxWidth="max-w-3xl"
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-charcoal-800/50 border border-charcoal-700">
+              <Avatar name={currentUser?.display_name || ''} color={currentUser?.avatar_color} size="lg" />
+              <p className="text-sm font-black text-white uppercase tracking-tight text-center truncate w-full">You</p>
+            </div>
+            <div className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-charcoal-800/50 border border-charcoal-700">
+              <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} size="lg" />
+              <p className="text-sm font-black text-white uppercase tracking-tight text-center truncate w-full">{targetProfile.display_name}</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+            {['cricket', 'chip_off', 'golf', 'darts'].map(sport => {
+              const mySportStats = currentUserStats.find(s => s.sport === sport);
+              const theirSportStats = stats.find(s => s.sport === sport);
+
+              if (!mySportStats && !theirSportStats) return null;
+
+              return (
+                <div key={sport} className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-charcoal-700" />
+                    <h3 className="text-[10px] font-black text-accent-500 uppercase tracking-[0.3em] whitespace-nowrap">
+                      {sport.replace('_', ' ')}
+                    </h3>
+                    <div className="h-px flex-1 bg-charcoal-700" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {sport === 'cricket' && (
+                      <>
+                        <ComparisonRow label="Strike Rate" val1={mySportStats?.strike_rate} val2={theirSportStats?.strike_rate} format="float" />
+                        <ComparisonRow label="Economy" val1={mySportStats?.economy_rate} val2={theirSportStats?.economy_rate} format="float" lowerIsBetter />
+                        <ComparisonRow label="Dot Ball %" val1={mySportStats?.dot_ball_percentage} val2={theirSportStats?.dot_ball_percentage} format="pct" />
+                        <ComparisonRow label="Boundary %" val1={mySportStats?.boundary_percentage} val2={theirSportStats?.boundary_percentage} format="pct" />
+                      </>
+                    )}
+                    {sport === 'chip_off' && (
+                      <>
+                        <ComparisonRow label="Efficiency" val1={mySportStats?.scoring_efficiency} val2={theirSportStats?.scoring_efficiency} format="pct" />
+                        <ComparisonRow label="Ace Freq" val1={mySportStats?.ace_frequency} val2={theirSportStats?.ace_frequency} format="pct" />
+                        <ComparisonRow label="Hazard Avoid" val1={mySportStats?.hazard_avoidance_rating} val2={theirSportStats?.hazard_avoidance_rating} format="pct" />
+                        <ComparisonRow label="Avg Proximity" val1={mySportStats?.average_proximity_tier} val2={theirSportStats?.average_proximity_tier} format="float" />
+                      </>
+                    )}
+                    <ComparisonRow label="Win Rate" 
+                      val1={mySportStats ? (mySportStats.matches_won / (mySportStats.matches_played || 1)) * 100 : undefined} 
+                      val2={theirSportStats ? (theirSportStats.matches_won / (theirSportStats.matches_played || 1)) * 100 : undefined} 
+                      format="pct" 
+                    />
+                    <ComparisonRow label="Matches Won" val1={mySportStats?.matches_won} val2={theirSportStats?.matches_won} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button 
+            onClick={() => setShowCompareModal(false)}
+            className="w-full btn-secondary py-3 font-bold uppercase tracking-widest text-xs"
+          >
+            Close Comparison
+          </button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function ComparisonRow({ label, val1, val2, format = 'int', lowerIsBetter = false }: { 
+  label: string, 
+  val1?: number, 
+  val2?: number, 
+  format?: 'int' | 'float' | 'pct',
+  lowerIsBetter?: boolean
+}) {
+  const formatVal = (v?: number) => {
+    if (v === undefined || v === null) return '-';
+    if (format === 'float') return v.toFixed(2);
+    if (format === 'pct') return `${v.toFixed(1)}%`;
+    return Math.round(v);
+  };
+
+  const isBetter = (v1?: number, v2?: number) => {
+    if (v1 === undefined || v2 === undefined) return null;
+    if (v1 === v2) return null;
+    return lowerIsBetter ? v1 < v2 : v1 > v2;
+  };
+
+  const better1 = isBetter(val1, val2);
+  const better2 = isBetter(val2, val1);
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`flex-1 p-2 rounded-xl text-center font-mono font-black text-sm transition-colors ${better1 ? 'bg-success-500/10 text-success-400 border border-success-500/20' : 'bg-charcoal-800 text-charcoal-400'}`}>
+        {formatVal(val1)}
+      </div>
+      <div className="w-24 text-center">
+        <span className="text-[10px] font-bold text-charcoal-500 uppercase tracking-tighter leading-none">{label}</span>
+      </div>
+      <div className={`flex-1 p-2 rounded-xl text-center font-mono font-black text-sm transition-colors ${better2 ? 'bg-success-500/10 text-success-400 border border-success-500/20' : 'bg-charcoal-800 text-charcoal-400'}`}>
+        {formatVal(val2)}
+      </div>
+    </div>
+  );
 }

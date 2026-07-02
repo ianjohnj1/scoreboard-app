@@ -10,7 +10,7 @@ type CustomConfig = {
 };
 
 export default function CustomRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin } = ctx;
+  const { match, teams, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const config = (match.custom_config || {}) as Partial<CustomConfig>;
   const buttons = config.scoring_buttons || [{ label: '+1', value: 1 }];
   const winCondition = config.win_condition || 'highest';
@@ -72,7 +72,7 @@ export default function CustomRoom({ ctx }: { ctx: MatchContext }) {
         ))}
       </div>
 
-      {!isSpectator && (match.status === 'active' || isAdmin) && (
+      {!isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && (
         <div className="flex-1 p-4 space-y-4">
           {entities.map(entity => (
             <div key={entity.id} className="card p-3">
