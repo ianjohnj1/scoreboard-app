@@ -67,6 +67,50 @@ export async function updateMatchStatus(matchId: string, status: string): Promis
   }
 }
 
+export async function completeMatchWithWinner(matchId: string, winnerProfileId: string): Promise<void> {
+  const { error } = await supabase
+    .from('match_rooms')
+    .update({
+      winner_profile_id: winnerProfileId,
+      winner_team_id: null,
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', matchId);
+
+  if (error) throw error;
+
+  try {
+    console.log(`Match ${matchId} completed with winner ${winnerProfileId}. Updating career stats...`);
+    await updateCareerStats(matchId);
+    console.log(`Successfully updated career stats for match ${matchId}`);
+  } catch (err) {
+    console.error(`CRITICAL: Failed to update career stats for match ${matchId} after winner completion:`, err);
+  }
+}
+
+export async function completeMatchWithTeamWinner(matchId: string, winnerTeamId: string): Promise<void> {
+  const { error } = await supabase
+    .from('match_rooms')
+    .update({
+      winner_team_id: winnerTeamId,
+      winner_profile_id: null,
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', matchId);
+
+  if (error) throw error;
+
+  try {
+    console.log(`Match ${matchId} completed with team winner ${winnerTeamId}. Updating career stats...`);
+    await updateCareerStats(matchId);
+    console.log(`Successfully updated career stats for match ${matchId}`);
+  } catch (err) {
+    console.error(`CRITICAL: Failed to update career stats for match ${matchId} after team winner completion:`, err);
+  }
+}
+
 export async function getRecentMatches(limit = 10): Promise<MatchRoom[]> {
   const { data, error } = await supabase
     .from('match_rooms')

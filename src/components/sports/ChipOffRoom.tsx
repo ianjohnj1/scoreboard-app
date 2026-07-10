@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { recordEvent, undoLastEvent } from '../../lib/matches';
+import { recordEvent, undoLastEvent, completeMatchWithWinner } from '../../lib/matches';
 import Avatar from '../Avatar';
 import Modal from '../Modal';
+import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile, GolfHole, MatchEvent } from '../../lib/supabase';
-import { Trophy, Star, ChevronRight, RotateCcw, AlertCircle } from 'lucide-react';
+import { Trophy, Star, ChevronRight, RotateCcw, AlertCircle, ArrowLeft } from 'lucide-react';
 
 interface ChipOffRules {
   balls_per_turn?: number;
@@ -27,6 +28,8 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showRoundWinner, setShowRoundWinner] = useState(false);
   const [roundWinnerName, setRoundWinnerName] = useState('');
+  const navigate = useNavigate();
+  const [isCreatingRematch, setIsCreatingRematch] = useState(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -112,8 +115,8 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
 
   // Game Logic Derived State
   const gameStats = useMemo(() => {
-    const stats = new Map<string, { totalPoints: number; tens: number; roundScores: number[] }>();
-    matchPlayers.forEach(p => stats.set(p.id, { totalPoints: 0, tens: 0, roundScores: Array(totalRounds).fill(0) }));
+    const stats = new Map<string, { totalPoints: number; tens: number; fives: number; twos: number; misses: number; hazards: number; chips: number; roundScores: number[] }>();
+    matchPlayers.forEach(p => stats.set(p.id, { totalPoints: 0, tens: 0, fives: 0, twos: 0, misses: 0, hazards: 0, chips: 0, roundScores: Array(totalRounds).fill(0) }));
 
     let currentRound = 1;
     let currentPlayerIndex = 0;
@@ -126,7 +129,13 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
         const playerStat = stats.get(pId);
         if (playerStat) {
           playerStat.totalPoints += points;
+          playerStat.chips += 1;
           if (points === 10) playerStat.tens += 1;
+          else if (points === 5) playerStat.fives += 1;
+          else if (points === 2) playerStat.twos += 1;
+          else if (points === 0) playerStat.misses += 1;
+          else if (points === -1) playerStat.hazards += 1;
+
           playerStat.roundScores[currentRound - 1] += points;
         }
 
@@ -182,6 +191,23 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
         
         setRoundWinnerName(winners.map(w => w.name).join(' & '));
         setShowRoundWinner(true);
+
+        if (gameStats.currentRound === totalRounds) {
+          const finalStats = Array.from(gameStats.stats.entries()).map(([id, s]) => {
+            if (id === currentPlayer.id) {
+              return { id, totalPoints: s.totalPoints + points, tens: s.tens + (points === 10 ? 1 : 0) };
+            }
+            return { id, totalPoints: s.totalPoints, tens: s.tens };
+          });
+          
+          finalStats.sort((a, b) => {
+            if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+            return b.tens - a.tens;
+          });
+          
+          await completeMatchWithWinner(match.id, finalStats[0].id);
+          ctx.onRefresh();
+        }
       }
     } finally {
       setLoading(false);
@@ -196,6 +222,49 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       await loadData();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRematch = async () => {
+    if (isCreatingRematch) return;
+    setIsCreatingRematch(true);
+    try {
+      const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const { data: newMatch, error: matchError } = await supabase
+        .from('match_rooms')
+        .insert({
+          sport: match.sport,
+          room_code: roomCode,
+          created_by: currentUser?.id || null,
+          status: 'active',
+          house_rules: match.house_rules,
+          custom_config: match.custom_config,
+          custom_game_name: match.custom_game_name,
+          is_practice: match.is_practice
+        })
+        .select()
+        .single();
+        
+      if (matchError) throw matchError;
+
+      const matchPlayersToInsert = players.map(p => ({
+        match_id: newMatch.id,
+        profile_id: p.profile_id,
+        role: p.role,
+        batting_order: p.batting_order
+      }));
+      
+      const { error: playersError } = await supabase
+        .from('match_players')
+        .insert(matchPlayersToInsert);
+        
+      if (playersError) throw playersError;
+
+      navigate(`/match/${roomCode}`);
+    } catch (err) {
+      console.error('Failed to create rematch:', err);
+    } finally {
+      setIsCreatingRematch(false);
     }
   };
 
@@ -217,7 +286,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
             </h2>
             <div className="flex items-center gap-2">
               <span className="text-xl">⛳</span>
-              <h1 className="text-lg font-black text-white uppercase tracking-tight">Chip Off</h1>
+              <h1 className="text-lg font-black text-charcoal-50 uppercase tracking-tight">Chip Off</h1>
             </div>
           </div>
           <div className="text-right">
@@ -242,13 +311,13 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
             <Avatar name={currentPlayer.display_name} color={currentPlayer.avatar_color} size="md" />
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Active Player</p>
-              <h3 className="text-xl font-black text-white truncate uppercase tracking-tight">
+              <h3 className="text-xl font-black text-charcoal-50 truncate uppercase tracking-tight">
                 {isMyTurn ? 'Your Turn!' : currentPlayer.display_name}
               </h3>
             </div>
             <div className="text-right">
               <p className="text-[10px] font-black text-charcoal-500 uppercase tracking-widest mb-1">Ball</p>
-              <p className="text-2xl font-mono font-black text-white">{gameStats.currentBallIndex + 1}<span className="text-charcoal-600 text-sm">/{ballsPerTurn}</span></p>
+              <p className="text-2xl font-mono font-black text-charcoal-50">{gameStats.currentBallIndex + 1}<span className="text-charcoal-600 text-sm">/{ballsPerTurn}</span></p>
             </div>
           </div>
         )}
@@ -256,8 +325,67 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-        {/* Scoring Pad */}
-        {!gameStats.isGameOver && !isSpectator && !isTvDisplayMode && (
+        {/* Scoring Pad or Match Summary */}
+        {(gameStats.isGameOver || match.winner_profile_id) ? (
+          <div className="flex flex-col items-center justify-center py-8 px-4 text-center bg-charcoal-900/30 rounded-2xl border border-charcoal-700">
+            <Trophy size={48} className="text-emerald-500 mb-4" />
+            <h2 className="text-2xl font-black text-charcoal-50 mb-6">Match Complete</h2>
+            
+            <div className="w-full space-y-4">
+              {sortedLeaderboard.map((p, idx) => {
+                const stat = gameStats.stats.get(p.id)!;
+                return (
+                  <div key={p.id} className="bg-charcoal-800 rounded-xl p-4 border border-charcoal-700 text-left">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-6 text-center font-mono font-black text-charcoal-500 text-sm">{idx + 1}</div>
+                      <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                      <span className="font-bold text-charcoal-100 flex-1 truncate">{p.display_name}</span>
+                      <span className="font-mono text-xl font-black text-charcoal-50">{stat.totalPoints} <span className="text-[10px] uppercase text-charcoal-500">pts</span></span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      <div className="bg-charcoal-900/50 rounded-lg p-2 text-center">
+                        <p className="text-[9px] font-bold text-charcoal-500 uppercase tracking-widest">Chips</p>
+                        <p className="font-mono text-base font-black text-charcoal-200">{stat.chips}</p>
+                      </div>
+                      <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-warning-500/20">
+                        <p className="text-[9px] font-bold text-warning-500 uppercase tracking-widest">10s</p>
+                        <p className="font-mono text-base font-black text-warning-400">{stat.tens}</p>
+                      </div>
+                      <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-emerald-500/20">
+                        <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">5s</p>
+                        <p className="font-mono text-base font-black text-emerald-400">{stat.fives}</p>
+                      </div>
+                      <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-blue-500/20">
+                        <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">2s</p>
+                        <p className="font-mono text-base font-black text-blue-400">{stat.twos}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {!isSpectator && !isTvDisplayMode && (
+              <div className="w-full max-w-sm mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button 
+                  onClick={handleRematch} 
+                  disabled={isCreatingRematch}
+                  className="btn-primary py-3 flex items-center justify-center gap-2"
+                >
+                  <RotateCcw size={18} />
+                  Rematch
+                </button>
+                <button 
+                  onClick={() => navigate('/')} 
+                  className="btn-secondary py-3 flex items-center justify-center gap-2"
+                >
+                  <ArrowLeft size={18} />
+                  Dashboard
+                </button>
+              </div>
+            )}
+          </div>
+        ) : !isSpectator && !isTvDisplayMode && (
           <div className="space-y-4 max-w-md mx-auto">
             <div className="grid grid-cols-2 gap-3">
               <button
@@ -352,7 +480,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
                   </div>
                   <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white truncate uppercase tracking-tight">{p.display_name}</p>
+                    <p className="text-sm font-bold text-charcoal-50 truncate uppercase tracking-tight">{p.display_name}</p>
                     {isFirst && <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest leading-none mt-0.5">Leader</p>}
                   </div>
                   <div className="flex items-center gap-6 font-mono">
@@ -362,7 +490,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
                       </span>
                     </div>
                     <div className="w-12 text-right">
-                      <span className="text-xl font-black text-white">{stat.totalPoints}</span>
+                      <span className="text-xl font-black text-charcoal-50">{stat.totalPoints}</span>
                     </div>
                   </div>
                 </div>
@@ -379,7 +507,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
             <Trophy className="text-emerald-500" size={40} />
           </div>
           <div>
-            <h3 className="text-2xl font-black text-white uppercase tracking-tight mb-2">
+            <h3 className="text-2xl font-black text-charcoal-50 uppercase tracking-tight mb-2">
               {roundWinnerName} Wins the Round!
             </h3>
             <p className="text-charcoal-400 text-sm leading-relaxed px-4">
@@ -388,7 +516,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
           </div>
           <button 
             onClick={() => setShowRoundWinner(false)}
-            className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-lg transition-all active:scale-95 uppercase tracking-widest text-sm"
+            className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-charcoal-50 font-black rounded-2xl shadow-lg transition-all active:scale-95 uppercase tracking-widest text-sm"
           >
             {gameStats.isGameOver ? 'See Final Leaderboard' : 'Start Next Round'}
           </button>

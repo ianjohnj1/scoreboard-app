@@ -6,17 +6,17 @@ export default {
     extend: {
       colors: {
         charcoal: {
-          50: '#f4f4f5',
-          100: '#e4e4e7',
-          200: '#d4d4d8',
-          300: '#a1a1aa',
-          400: '#71717a',
-          500: '#52525b',
-          600: '#3f3f46',
-          700: '#27272a',
-          800: '#18181b',
-          900: '#09090b',
-          950: '#040405',
+          50: 'rgb(var(--color-charcoal-50) / <alpha-value>)',
+          100: 'rgb(var(--color-charcoal-100) / <alpha-value>)',
+          200: 'rgb(var(--color-charcoal-200) / <alpha-value>)',
+          300: 'rgb(var(--color-charcoal-300) / <alpha-value>)',
+          400: 'rgb(var(--color-charcoal-400) / <alpha-value>)',
+          500: 'rgb(var(--color-charcoal-500) / <alpha-value>)',
+          600: 'rgb(var(--color-charcoal-600) / <alpha-value>)',
+          700: 'rgb(var(--color-charcoal-700) / <alpha-value>)',
+          800: 'rgb(var(--color-charcoal-800) / <alpha-value>)',
+          900: 'rgb(var(--color-charcoal-900) / <alpha-value>)',
+          950: 'rgb(var(--color-charcoal-950) / <alpha-value>)',
         },
         slate: {
           50: '#f8fafc',
@@ -69,6 +69,7 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+        athletic: ['Oswald', 'system-ui', 'sans-serif'],
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

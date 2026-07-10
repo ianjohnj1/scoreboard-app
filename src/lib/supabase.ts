@@ -132,6 +132,13 @@ export type PlayerCareerAnalytics = {
   ace_frequency: number;
   hazard_avoidance_rating: number;
   average_proximity_tier: number;
+  // Darts stats
+  countdown_ppr: number;
+  first_nine_ppr: number;
+  checkout_pct: number;
+  atw_efficiency: number;
+  killer_lethality: number;
+  killer_survival: number;
 };
 
 export type CricketInnings = {

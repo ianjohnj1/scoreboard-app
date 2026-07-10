@@ -271,7 +271,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                   <div className="space-y-3">
                     <button
                       onClick={initializeHoles}
-                      className="w-full py-4 bg-accent-600 hover:bg-accent-500 text-white font-black rounded-2xl shadow-lg shadow-accent-900/40 transition-all active:scale-95 uppercase tracking-widest text-sm"
+                      className="w-full py-4 bg-accent-600 hover:bg-accent-500 text-charcoal-50 font-black rounded-2xl shadow-lg shadow-accent-900/40 transition-all active:scale-95 uppercase tracking-widest text-sm"
                     >
                       Initialize {numHoles} Holes
                     </button>
@@ -523,7 +523,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                       }
                     }
                   }}
-                  className="px-6 py-3 rounded-xl bg-accent-600 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-accent-900/40 active:scale-95 transition-all"
+                  className="px-6 py-3 rounded-xl bg-accent-600 text-charcoal-50 font-black uppercase tracking-widest text-xs shadow-lg shadow-accent-900/40 active:scale-95 transition-all"
                 >
                   Next Player →
                 </button>

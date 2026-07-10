@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { recordEvent, undoLastEvent } from '../../lib/matches';
+import { recordEvent, undoLastEvent, completeMatchWithWinner, completeMatchWithTeamWinner } from '../../lib/matches';
 import Modal from '../Modal';
 import Avatar from '../Avatar';
+import { Trophy, RotateCcw, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { CricketInnings, CricketPlayerStats, MatchTeam, Profile } from '../../lib/supabase';
 
@@ -33,6 +35,9 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   }>({ method: 'Bowled', dismissedBy: '', fieldedBy: '' });
   const [milestoneMsg, setMilestoneMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isCreatingRematch, setIsCreatingRematch] = useState(false);
+  const [showNextBatterModal, setShowNextBatterModal] = useState(false);
+  const [nextBatterProfileId, setNextBatterProfileId] = useState<string | null>(null);
   const isMountedRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -215,7 +220,10 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
     : players.filter(p => p.team_id === battingTeam?.id).map(p => profiles.get(p.profile_id)).filter(Boolean) as Profile[];
 
   const bowlingPlayers = ctx.isBackyard 
-    ? players.map(p => profiles.get(p.profile_id)).filter(Boolean) as Profile[]
+    ? players
+        .filter(p => p.profile_id !== innings?.current_batter1_id && p.profile_id !== innings?.current_batter2_id)
+        .map(p => profiles.get(p.profile_id))
+        .filter(Boolean) as Profile[]
     : players.filter(p => p.team_id === bowlingTeam?.id).map(p => profiles.get(p.profile_id)).filter(Boolean) as Profile[];
 
   const currentBatter1 = innings?.current_batter1_id ? profiles.get(innings.current_batter1_id) : null;
@@ -247,11 +255,11 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
     // Check match end
     if (houseRules.max_overs && innings.balls >= houseRules.max_overs * 6) {
-      alert("Maximum overs reached!");
+      handleCompleteMatch();
       return;
     }
     if (houseRules.max_wickets && innings.wickets >= houseRules.max_wickets) {
-      alert("Maximum wickets reached!");
+      handleCompleteMatch();
       return;
     }
 
@@ -397,22 +405,31 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
       let nextBatter2Id: string | null = null;
 
       if (ctx.isBackyard) {
-        // Find next available batter in backyard mode
-        const sortedPlayers = [...players].sort((a, b) => (a.batting_order || 0) - (b.batting_order || 0));
-        const currentIdx = sortedPlayers.findIndex(p => p.profile_id === currentBatter1.id);
-        
-        // Find the next player who hasn't been dismissed
-        for (let i = 1; i <= sortedPlayers.length; i++) {
-          const nextIdx = (currentIdx + i) % sortedPlayers.length;
-          const nextP = sortedPlayers[nextIdx];
-          const nextPStat = playerStats.get(nextP.profile_id);
+          // Auto-rotate batter based on join order (batting_order)
+          const sortedPlayers = [...players].sort((a, b) => (a.batting_order || 0) - (b.batting_order || 0));
           
-          if (!nextPStat?.bat_dismissed && nextP.profile_id !== currentBatter1.id) {
+          if (sortedPlayers.length > 0) {
+            const currentIdx = sortedPlayers.findIndex(p => p.profile_id === currentBatter1.id);
+            
+            // Find the next player in the rotation
+            const nextIdx = (currentIdx + 1) % sortedPlayers.length;
+            const nextP = sortedPlayers[nextIdx];
             nextBatter1Id = nextP.profile_id;
-            break;
+            
+            // Reset their bat_dismissed status so they appear active
+            const nextStatId = await getOrCreatePlayerStat(nextBatter1Id, innings.id);
+            await supabase.from('cricket_player_stats').update({
+              bat_dismissed: false,
+              bat_dismissal_method: null,
+              bat_dismissed_by: null,
+              bat_fielded_by: null
+            }).eq('id', nextStatId);
+
+            // Show Next Batter Modal
+            setNextBatterProfileId(nextBatter1Id);
+            setShowNextBatterModal(true);
           }
         }
-      }
 
       await supabase.from('cricket_innings').update({
         wickets: innings.wickets + 1,
@@ -521,10 +538,133 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
     setPlayerStats(new Map());
   };
 
+  const handleCompleteMatch = async () => {
+    if (!match || match.status === 'completed') return;
+    setLoading(true);
+    try {
+      if (ctx.isBackyard) {
+        // Find player with most runs
+        let maxRuns = -1;
+        let winnerId = null;
+        for (const [profileId, stat] of playerStats.entries()) {
+          if (stat.bat_runs > maxRuns) {
+            maxRuns = stat.bat_runs;
+            winnerId = profileId;
+          }
+        }
+        if (winnerId) {
+          await completeMatchWithWinner(match.id, winnerId);
+        }
+      } else {
+        // Find team with most runs. In a real match you'd check both innings
+        // Here we just pick the team currently batting if they chased it, or bowling team
+        // Let's do a basic comparison if there are two innings
+        const { data: allInnings } = await supabase
+          .from('cricket_innings')
+          .select('*')
+          .eq('match_id', match.id);
+        
+        let team1Runs = 0;
+        let team2Runs = 0;
+        let team1Id = ctx.teams[0]?.id;
+        let team2Id = ctx.teams[1]?.id;
+
+        if (allInnings) {
+          allInnings.forEach(inn => {
+            if (inn.batting_team_id === team1Id) team1Runs += inn.total_runs;
+            if (inn.batting_team_id === team2Id) team2Runs += inn.total_runs;
+          });
+        }
+        
+        let winnerTeamId = null;
+        if (team1Runs > team2Runs) winnerTeamId = team1Id;
+        else if (team2Runs > team1Runs) winnerTeamId = team2Id;
+
+        if (winnerTeamId) {
+          await completeMatchWithTeamWinner(match.id, winnerTeamId);
+        } else {
+          // It's a draw or no winner determined, just set completed
+          await supabase.from('match_rooms').update({ status: 'completed' }).eq('id', match.id);
+        }
+      }
+
+      ctx.onRefresh();
+    } catch (err) {
+      console.error("Failed to complete match:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRematch = async () => {
+    if (isCreatingRematch) return;
+    setIsCreatingRematch(true);
+    try {
+      const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const { data: newMatch, error: matchError } = await supabase
+        .from('match_rooms')
+        .insert({
+          sport: match.sport,
+          room_code: roomCode,
+          created_by: currentUser?.id || null,
+          status: 'active',
+          house_rules: match.house_rules,
+          custom_config: match.custom_config,
+          custom_game_name: match.custom_game_name,
+          is_practice: match.is_practice
+        })
+        .select()
+        .single();
+        
+      if (matchError) throw matchError;
+
+      // Copy teams
+      const teamIdMap = new Map<string, string>(); // old -> new
+      if (ctx.teams && ctx.teams.length > 0) {
+        for (const team of ctx.teams) {
+          const { data: newTeam } = await supabase
+            .from('match_teams')
+            .insert({
+              match_id: newMatch.id,
+              team_name: team.team_name,
+              team_color: team.team_color,
+              sort_order: team.sort_order
+            })
+            .select()
+            .single();
+          if (newTeam) {
+            teamIdMap.set(team.id, newTeam.id);
+          }
+        }
+      }
+
+      // Copy players
+      const matchPlayersToInsert = players.map(p => ({
+        match_id: newMatch.id,
+        profile_id: p.profile_id,
+        role: p.role,
+        batting_order: p.batting_order,
+        team_id: p.team_id && teamIdMap.has(p.team_id) ? teamIdMap.get(p.team_id) : null
+      }));
+      
+      const { error: playersError } = await supabase
+        .from('match_players')
+        .insert(matchPlayersToInsert);
+        
+      if (playersError) throw playersError;
+
+      navigate(`/match/${roomCode}`);
+    } catch (err) {
+      console.error('Failed to create rematch:', err);
+    } finally {
+      setIsCreatingRematch(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-charcoal-950">
+    <div className="flex flex-col h-full overflow-hidden bg-charcoal-950 relative">
       {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-charcoal-700 scrollbar-track-transparent pb-4">
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-charcoal-700 scrollbar-track-transparent pb-[200px]">
         {/* Milestone banner */}
         {milestoneMsg && (
           <div className="bg-warning-500/20 border-b border-warning-500/30 px-4 py-2 text-warning-300 text-center text-sm font-semibold animate-slide-down">
@@ -546,7 +686,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                     {currentBatter1?.display_name || 'Active Batter'}
                   </span>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-mono font-black leading-none tracking-tighter text-white">
+                    <span className="text-4xl font-mono font-black leading-none tracking-tighter text-charcoal-50">
                       {playerStats.get(currentBatter1?.id || '')?.bat_runs ?? 0}
                     </span>
                     <span className="text-2xl font-mono font-bold text-charcoal-500">
@@ -560,7 +700,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                     {battingTeam?.team_name || 'Innings 1'}
                   </span>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-mono font-black leading-none tracking-tighter text-white">
+                    <span className="text-4xl font-mono font-black leading-none tracking-tighter text-charcoal-50">
                       {innings?.total_runs ?? 0}
                     </span>
                     <span className="text-2xl font-mono font-bold text-danger-500">
@@ -572,7 +712,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
               {/* Mobile Over Info */}
               <div className="md:hidden flex flex-col items-end justify-center">
                 <span className="text-[10px] font-bold text-charcoal-500 uppercase tracking-wider">Overs</span>
-                <span className="text-xl font-mono font-black text-white">{overs}</span>
+                <span className="text-xl font-mono font-black text-charcoal-50">{overs}</span>
               </div>
             </div>
 
@@ -607,7 +747,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-black text-charcoal-600 uppercase tracking-[0.15em]">Recent Deliveries</span>
                   <span className="text-[9px] font-black text-cricket/70 uppercase tracking-widest hidden md:block">
-                    Partnership: <span className="text-white">{partnership.runs}</span> ({partnership.balls})
+                    Partnership: <span className="text-charcoal-50">{partnership.runs}</span> ({partnership.balls})
                   </span>
                 </div>
                 <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
@@ -624,8 +764,8 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                         <div
                           key={event.id}
                           className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black font-mono shadow-lg transition-transform hover:scale-110 ${
-                            isWicket ? 'bg-danger-600 text-white animate-pulse' :
-                            runs === 4 ? 'bg-success-600 text-white' :
+                            isWicket ? 'bg-danger-600 text-charcoal-50 animate-pulse' :
+                            runs === 4 ? 'bg-success-600 text-charcoal-50' :
                             runs === 6 ? 'bg-warning-500 text-charcoal-950' :
                             extra ? 'bg-charcoal-700 text-warning-400 border border-warning-500/30' :
                             'bg-charcoal-800 text-charcoal-300 border border-charcoal-700'
@@ -667,30 +807,51 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
           </div>
         </div>
 
-        {/* Live Batters Tickers */}
-        <div className={`grid ${ctx.isBackyard ? 'grid-cols-1' : 'grid-cols-2'} gap-px bg-charcoal-800/50 border-b border-charcoal-800 relative z-10`}>
-          <ActivePlayerOverlay
-            label={ctx.isBackyard ? "ACTIVE BATTER" : "STRIKER"}
-            profile={currentBatter1}
-            players={battingPlayers}
-            onChange={id => updateBatter(1, id)}
-            stat={currentBatter1 ? playerStats.get(currentBatter1.id) : undefined}
-            type="batter"
-            isFacing={true}
-            disabled={isSpectator}
-          />
-          {!ctx.isBackyard && (
+        {/* Match Complete Banner */}
+        {(match.status === 'completed' || match.winner_profile_id || match.winner_team_id) && (
+          <div className="flex flex-col items-center justify-center py-6 px-4 text-center bg-cricket/10 border-b border-cricket/20 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-t from-cricket/5 to-transparent pointer-events-none" />
+            <Trophy size={48} className="text-cricket mb-3 relative z-10" />
+            <h2 className="text-2xl font-athletic text-charcoal-50 uppercase tracking-wide relative z-10">Match Complete</h2>
+            {match.winner_profile_id && (
+              <p className="text-charcoal-300 font-bold mt-1 relative z-10">
+                Winner: {profiles.get(match.winner_profile_id)?.display_name || 'Unknown'}
+              </p>
+            )}
+            {match.winner_team_id && (
+              <p className="text-charcoal-300 font-bold mt-1 relative z-10">
+                Winner: {ctx.teams.find(t => t.id === match.winner_team_id)?.team_name || 'Unknown'}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Live Batters Tickers (Hidden if match complete) */}
+        {match.status !== 'completed' && !match.winner_profile_id && !match.winner_team_id && (
+          <div className={`grid ${ctx.isBackyard ? 'grid-cols-1' : 'grid-cols-2'} gap-px bg-charcoal-800/50 border-b border-charcoal-800 relative z-10`}>
             <ActivePlayerOverlay
-              label="NON-STRIKER"
-              profile={currentBatter2}
+              label={ctx.isBackyard ? "ACTIVE BATTER" : "STRIKER"}
+              profile={currentBatter1}
               players={battingPlayers}
-              onChange={id => updateBatter(2, id)}
-              stat={currentBatter2 ? playerStats.get(currentBatter2.id) : undefined}
+              onChange={id => updateBatter(1, id)}
+              stat={currentBatter1 ? playerStats.get(currentBatter1.id) : undefined}
               type="batter"
+              isFacing={true}
               disabled={isSpectator}
             />
-          )}
-        </div>
+            {!ctx.isBackyard && (
+              <ActivePlayerOverlay
+                label="NON-STRIKER"
+                profile={currentBatter2}
+                players={battingPlayers}
+                onChange={id => updateBatter(2, id)}
+                stat={currentBatter2 ? playerStats.get(currentBatter2.id) : undefined}
+                type="batter"
+                disabled={isSpectator}
+              />
+            )}
+          </div>
+        )}
 
         {/* Full Batting Scorecard */}
         <div className="p-4 space-y-3">
@@ -727,7 +888,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-bold truncate ${isAtCrease ? 'text-white' : 'text-charcoal-300'}`}>
+                      <span className={`text-sm font-bold truncate ${isAtCrease ? 'text-charcoal-50' : 'text-charcoal-300'}`}>
                         {p.display_name}
                       </span>
                       {isStriker && <span className="text-[10px] font-black text-cricket animate-bounce">🏏</span>}
@@ -743,7 +904,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
                   <div className="flex items-center gap-6 font-mono">
                     <div className="w-8 text-right">
-                      <div className={`text-lg font-black leading-none ${isAtCrease ? 'text-white' : 'text-charcoal-200'}`}>{stat?.bat_runs ?? 0}</div>
+                      <div className={`text-lg font-black leading-none ${isAtCrease ? 'text-charcoal-50' : 'text-charcoal-200'}`}>{stat?.bat_runs ?? 0}</div>
                     </div>
                     <div className="w-8 text-right">
                       <div className="text-sm font-bold text-charcoal-500 leading-none">{stat?.bat_balls ?? 0}</div>
@@ -761,18 +922,20 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
       {/* STACK 3: BOWLING STATS (Moved into scrollable area) */}
         <div className="flex flex-col bg-charcoal-900/40">
-          {/* Active Bowler Ticker */}
-          <div className="bg-charcoal-800/50 border-b border-charcoal-800">
-            <ActivePlayerOverlay
-              label="CURRENT BOWLER"
-              profile={currentBowler}
-              players={bowlingPlayers}
-              onChange={updateBowler}
-              stat={currentBowler ? playerStats.get(currentBowler.id) : undefined}
-              type="bowler"
-              disabled={isSpectator}
-            />
-          </div>
+          {/* Active Bowler Ticker (Hidden if match complete) */}
+          {match.status !== 'completed' && !match.winner_profile_id && !match.winner_team_id && (
+            <div className="bg-charcoal-800/50 border-b border-charcoal-800">
+              <ActivePlayerOverlay
+                label="CURRENT BOWLER"
+                profile={currentBowler}
+                players={bowlingPlayers}
+                onChange={updateBowler}
+                stat={currentBowler ? playerStats.get(currentBowler.id) : undefined}
+                type="bowler"
+                disabled={isSpectator}
+              />
+            </div>
+          )}
 
           {/* Bowling Analysis Table */}
           <div className="p-4 space-y-3">
@@ -805,7 +968,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold truncate ${isCurrent ? 'text-white' : 'text-charcoal-300'}`}>
+                        <span className={`text-sm font-bold truncate ${isCurrent ? 'text-charcoal-50' : 'text-charcoal-300'}`}>
                           {p.display_name}
                         </span>
                         {isCurrent && <span className="text-[10px] font-black text-success-500 uppercase tracking-widest animate-pulse">Bowling</span>}
@@ -814,7 +977,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
                     <div className="flex items-center gap-4 sm:gap-6 font-mono">
                       <div className="w-10 text-right">
-                        <div className={`text-sm font-bold leading-none ${isCurrent ? 'text-white' : 'text-charcoal-200'}`}>{overs}</div>
+                        <div className={`text-sm font-bold leading-none ${isCurrent ? 'text-charcoal-50' : 'text-charcoal-200'}`}>{overs}</div>
                       </div>
                       <div className="w-8 text-right">
                         <div className="text-sm font-bold text-charcoal-400 leading-none">{stat?.bowl_runs ?? 0}</div>
@@ -834,11 +997,32 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
       </div>
       </div>
 
-      {/* STACK 2: FIXED SCORING UI CONTROLS (Pinned to bottom) */}
-      {!isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && (
-        <div className="sticky bottom-0 bg-charcoal-900/95 backdrop-blur-md border-t border-charcoal-800 py-2 px-3 safe-bottom z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-          <div className="flex flex-col gap-2 max-w-2xl mx-auto">
-            {/* Run buttons */}
+      {/* STACK 2: FIXED SCORING UI CONTROLS OR REMATCH ACTIONS (Pinned to bottom) */}
+      {(match.status === 'completed' || match.winner_profile_id || match.winner_team_id) ? (
+        <div className="absolute bottom-0 left-0 right-0 p-4 safe-bottom z-30">
+          <div className="max-w-md mx-auto grid grid-cols-2 gap-3">
+            <button
+              onClick={handleRematch}
+              disabled={isCreatingRematch}
+              className="btn-primary py-3 flex items-center justify-center gap-2"
+            >
+              <RotateCcw size={18} />
+              Rematch
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="btn-secondary py-3 flex items-center justify-center gap-2"
+            >
+              <ArrowLeft size={18} />
+              Dashboard
+            </button>
+          </div>
+        </div>
+      ) : (
+        !isSpectator && !isTvDisplayMode && (match.status === 'active' || isAdmin) && (
+          <div className="absolute bottom-0 left-0 right-0 py-2 px-3 safe-bottom z-30">
+            <div className="flex flex-col gap-2 max-w-2xl mx-auto">
+              {/* Run buttons */}
             <div className="grid grid-cols-6 gap-1.5">
               {[0, 1, 2, 3, 4, 6].map(r => (
                 <button
@@ -895,7 +1079,30 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
             </div>
           </div>
         </div>
+        )
       )}
+
+      {/* Next Batter Modal (Backyard Mode) */}
+      <Modal isOpen={showNextBatterModal} onClose={() => setShowNextBatterModal(false)} title="Next Batter">
+        <div className="flex flex-col items-center justify-center p-6 space-y-4">
+          <Avatar 
+            name={profiles.get(nextBatterProfileId || '')?.display_name || ''} 
+            color={profiles.get(nextBatterProfileId || '')?.avatar_color || '#ccc'} 
+            size="lg" 
+          />
+          <h2 className="text-2xl font-black text-charcoal-50">
+            {profiles.get(nextBatterProfileId || '')?.display_name}
+          </h2>
+          <p className="text-charcoal-300 text-sm uppercase tracking-widest font-bold">is up to bat!</p>
+          
+          <button 
+            onClick={() => setShowNextBatterModal(false)}
+            className="btn-primary w-full mt-4 py-3"
+          >
+            Ready
+          </button>
+        </div>
+      </Modal>
 
       {/* Wicket Modal */}
       <Modal isOpen={showWicketModal} onClose={() => setShowWicketModal(false)} title="Wicket!">
@@ -1005,7 +1212,7 @@ function ActivePlayerOverlay({
             value={profile?.id || ''}
             onChange={e => onChange(e.target.value)}
             disabled={disabled}
-            className="bg-transparent text-sm font-black text-white border-none p-0 focus:ring-0 cursor-pointer hover:text-cricket transition-colors w-full truncate appearance-none"
+            className="bg-transparent text-sm font-black text-charcoal-50 border-none p-0 focus:ring-0 cursor-pointer hover:text-cricket transition-colors w-full truncate appearance-none"
           >
             <option value="">SELECT PLAYER</option>
             {players.map(p => (
@@ -1020,7 +1227,7 @@ function ActivePlayerOverlay({
           {type === 'batter' ? (
             <div className="flex flex-col items-end">
               <div className="flex items-baseline gap-1">
-                <span className="text-lg font-mono font-black text-white leading-none">{stat.bat_runs}</span>
+                <span className="text-lg font-mono font-black text-charcoal-50 leading-none">{stat.bat_runs}</span>
                 <span className="text-[10px] font-mono font-bold text-charcoal-500">({stat.bat_balls})</span>
               </div>
               <span className="text-[8px] font-black text-charcoal-600 uppercase tracking-tighter mt-1">SR: <span className="text-cricket/80">{sr}</span></span>

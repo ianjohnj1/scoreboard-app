@@ -5,9 +5,10 @@ import { supabase } from '../lib/supabase';
 import { getSportLabel } from '../lib/matches';
 import { getGlobalLeaderboardData } from '../lib/stats';
 import Avatar from '../components/Avatar';
+import ThemeToggle from '../components/ThemeToggle';
 import type { Profile, PlayerCareerStats } from '../lib/supabase';
 
-type LeaderboardEntry = PlayerCareerStats & { profile: Profile; rankScore: number };
+type LeaderboardEntry = PlayerCareerStats & { profile: Profile; rankScore: number; best_sport?: string; chip_off_total_chips?: number; chip_off_scoring_chips?: number };
 
 export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -16,7 +17,7 @@ export default function LeaderboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const sports = ['all', 'cricket', 'chip_off', 'golf', 'darts', 'table_tennis', 'pool', 'basketball', 'cards', 'custom'];
+  const sports = ['all', 'cricket', 'golf', 'darts', 'table_tennis', 'pool', 'basketball', 'cards', 'custom'];
 
   const loadLeaderboard = useCallback(async (isMounted?: () => boolean) => {
     setLoading(true);
@@ -42,6 +43,8 @@ export default function LeaderboardPage() {
             acc[pid] = {
               ...curr,
               sport: 'all',
+              best_sport: curr.sport,
+              max_sport_sp: curr.season_points,
               matches_played: 0,
               matches_won: 0,
               matches_lost: 0,
@@ -56,6 +59,12 @@ export default function LeaderboardPage() {
           acc[pid].matches_lost += curr.matches_lost;
           acc[pid].total_score += curr.total_score;
           acc[pid].season_points += curr.season_points;
+          
+          if (curr.season_points > acc[pid].max_sport_sp) {
+            acc[pid].max_sport_sp = curr.season_points;
+            acc[pid].best_sport = curr.sport;
+          }
+
           return acc;
         }, {});
         processedData = Object.values(aggregated);
@@ -121,12 +130,15 @@ export default function LeaderboardPage() {
 
   return (
     <div className="min-h-screen bg-charcoal-900 pb-24">
-      <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-4 safe-top">
-        <div className="flex items-center gap-2">
-          <Trophy size={20} className="text-warning-400" />
-          <h1 className="text-xl font-bold text-charcoal-50">Leaderboards</h1>
+      <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-4 safe-top flex justify-between items-center transition-colors duration-300">
+        <div>
+          <div className="flex items-center gap-2">
+            <Trophy size={20} className="text-warning-400" />
+            <h1 className="text-xl font-bold text-charcoal-50">Leaderboards</h1>
+          </div>
+          <p className="text-charcoal-400 text-sm">Global rankings across all sports</p>
         </div>
-        <p className="text-charcoal-400 text-sm">Global rankings across all sports</p>
+        <ThemeToggle />
       </div>
 
       <div className="p-4 max-w-2xl mx-auto">
@@ -142,7 +154,7 @@ export default function LeaderboardPage() {
                 let mounted = true;
                 loadLeaderboard(() => mounted);
               }}
-              className="px-4 py-2 bg-charcoal-800 hover:bg-charcoal-700 text-white text-sm font-bold rounded-lg transition-all flex items-center gap-2 mx-auto"
+              className="px-4 py-2 bg-charcoal-800 hover:bg-charcoal-700 text-charcoal-50 text-sm font-bold rounded-lg transition-all flex items-center gap-2 mx-auto"
             >
               <RotateCcw size={14} />
               Retry
@@ -151,15 +163,15 @@ export default function LeaderboardPage() {
         )}
 
         {/* Sport filter */}
-        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 mb-6">
-          <div className="flex gap-2 pb-1" style={{ width: 'max-content' }}>
+        <div className="mb-6 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex overflow-x-auto sm:flex-wrap gap-2 pb-2 sm:pb-0 no-scrollbar snap-x">
             {sports.map(s => (
               <button
                 key={s}
                 onClick={() => setSport(s)}
-                className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
+                className={`snap-start whitespace-nowrap px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
                   sport === s
-                    ? 'bg-accent-600 border-accent-500 text-white shadow-lg shadow-accent-900/20'
+                    ? 'bg-accent-600 border-accent-500 text-charcoal-50 shadow-lg shadow-accent-900/20'
                     : 'bg-charcoal-800 border-charcoal-700 text-charcoal-400 hover:text-charcoal-200'
                 }`}
               >
@@ -190,7 +202,7 @@ export default function LeaderboardPage() {
                       <Avatar name={entries[1].profile?.display_name || '?'} color={entries[1].profile?.avatar_color} size="lg" />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-charcoal-400 border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">2</div>
                     </div>
-                    <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-white">{entries[1].profile?.display_name}</p>
+                    <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-charcoal-50">{entries[1].profile?.display_name}</p>
                   </Link>
                   <p className="text-[10px] text-charcoal-400 font-mono">
                     {sport === 'all' ? `${entries[1].season_points} SP` : 
@@ -211,7 +223,7 @@ export default function LeaderboardPage() {
                       <Avatar name={entries[0].profile?.display_name || '?'} color={entries[0].profile?.avatar_color} size="xl" />
                       <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-warning-400 border-2 border-charcoal-900 flex items-center justify-center text-xs font-bold text-charcoal-900">1</div>
                     </div>
-                    <p className="text-sm font-bold text-charcoal-50 truncate w-full text-center group-hover:text-white">{entries[0].profile?.display_name}</p>
+                    <p className="text-sm font-bold text-charcoal-50 truncate w-full text-center group-hover:text-charcoal-50">{entries[0].profile?.display_name}</p>
                   </Link>
                   <p className="text-xs text-warning-400 font-bold font-mono">
                     {sport === 'all' ? `${entries[0].season_points} SP` : 
@@ -229,7 +241,7 @@ export default function LeaderboardPage() {
                       <Avatar name={entries[2].profile?.display_name || '?'} color={entries[2].profile?.avatar_color} size="lg" />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cricket border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">3</div>
                     </div>
-                    <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-white">{entries[2].profile?.display_name}</p>
+                    <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-charcoal-50">{entries[2].profile?.display_name}</p>
                   </Link>
                   <p className="text-[10px] text-charcoal-400 font-mono">
                     {sport === 'all' ? `${entries[2].season_points} SP` : 
@@ -274,15 +286,11 @@ export default function LeaderboardPage() {
                     );
                   }
                   if (sport === 'chip_off') {
-                    const efficiency = entry.chip_off_total_chips > 0 
-                      ? Math.round((entry.golf_lifetime_points / (entry.chip_off_total_chips * 10)) * 100) 
-                      : 0;
-                    const aceFreq = entry.chip_off_total_chips > 0 
-                      ? Math.round((entry.golf_lifetime_hio / entry.chip_off_total_chips) * 100) 
-                      : 0;
-                    const hazardAvoid = entry.chip_off_total_chips > 0 
-                      ? Math.round((entry.chip_off_scoring_chips / entry.chip_off_total_chips) * 100) 
-                      : 0;
+                    const totalChips = entry.chip_off_total_chips || 0;
+                    const scoringChips = entry.chip_off_scoring_chips || 0;
+                    const efficiency = totalChips > 0 ? Math.round((entry.golf_lifetime_points / (totalChips * 10)) * 100) : 0;
+                    const aceFreq = totalChips > 0 ? Math.round((entry.golf_lifetime_hio / totalChips) * 100) : 0;
+                    const hazardAvoid = totalChips > 0 ? Math.round((scoringChips / totalChips) * 100) : 0;
 
                     return (
                       <div className="flex gap-4 text-xs font-mono">
@@ -327,11 +335,15 @@ export default function LeaderboardPage() {
                       <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" className="group-hover:scale-105 transition-transform" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-charcoal-100 font-semibold text-sm truncate group-hover:text-white">{entry.profile?.display_name}</p>
+                          <p className="text-charcoal-100 font-semibold text-sm truncate group-hover:text-charcoal-50">{entry.profile?.display_name}</p>
                           {entry.profile?.is_guest && <span className="pill-guest text-[10px] px-1.5 py-0.5">Guest</span>}
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className="text-charcoal-500 text-[10px] uppercase tracking-wider">{getSportLabel(entry.sport)}</p>
+                          <p className="text-charcoal-500 text-[10px] uppercase tracking-wider">
+                            {sport === 'all' && entry.best_sport
+                              ? `Best Sport: ${getSportLabel(entry.best_sport)}`
+                              : getSportLabel(entry.sport)}
+                          </p>
                         </div>
                       </div>
                     </Link>

@@ -230,7 +230,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-charcoal-900 text-white">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-charcoal-900 text-charcoal-50">
       <form onSubmit={handleAction} className="p-8 bg-charcoal-800 rounded-xl w-full max-w-sm">
         <h1 className="text-2xl font-bold mb-6 text-center">{getHeadingText()}</h1>
         
@@ -239,7 +239,7 @@ export default function LoginPage() {
           placeholder="Username" 
           value={username} 
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full p-3 mb-4 bg-charcoal-700 rounded text-white"
+          className="w-full p-3 mb-4 bg-charcoal-700 rounded text-charcoal-50"
           required
         />
 
@@ -249,7 +249,7 @@ export default function LoginPage() {
             placeholder="Display Name (e.g. Edawwg)" 
             value={displayName} 
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full p-3 mb-4 bg-charcoal-700 rounded text-white border border-green-500"
+            className="w-full p-3 mb-4 bg-charcoal-700 rounded text-charcoal-50 border border-green-500"
             required
           />
         )}
@@ -261,7 +261,7 @@ export default function LoginPage() {
             placeholder="Master Migration Token" 
             value={masterToken} 
             onChange={(e) => setMasterToken(e.target.value)}
-            className="w-full p-3 mb-4 bg-charcoal-700 rounded border border-blue-500 text-white"
+            className="w-full p-3 mb-4 bg-charcoal-700 rounded border border-blue-500 text-charcoal-50"
             required
           />
         )}
@@ -272,7 +272,7 @@ export default function LoginPage() {
           placeholder={mode === 'signup' ? "Create a 4-Digit PIN" : "PIN"} 
           value={pin} 
           onChange={(e) => setPin(e.target.value)}
-          className="w-full p-3 mb-4 bg-charcoal-700 rounded text-white"
+          className="w-full p-3 mb-4 bg-charcoal-700 rounded text-charcoal-50"
           required
         />
 
@@ -287,7 +287,7 @@ export default function LoginPage() {
             <button 
               type="button"
               onClick={() => setMode('login')}
-              className="underline block w-full hover:text-white"
+              className="underline block w-full hover:text-charcoal-50"
             >
               Back to Login
             </button>
@@ -306,7 +306,7 @@ export default function LoginPage() {
               <button 
                 type="button"
                 onClick={() => setMode('claim')}
-                className="underline block w-full hover:text-white"
+                className="underline block w-full hover:text-charcoal-50"
               >
                 I am a guest upgrading my account
               </button>

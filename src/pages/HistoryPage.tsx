@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Clock, Filter, ChevronRight, Trophy, Lock, Trash2, RotateCcw, AlertCircle } from 'lucide-react';
 import { getRecentMatches, getSportIcon, getSportLabel, deleteMatch } from '../lib/matches';
 import { supabase } from '../lib/supabase';
+import ThemeToggle from '../components/ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/Avatar';
 import type { MatchRoom, Profile } from '../lib/supabase';
@@ -69,9 +70,12 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-charcoal-900 pb-24">
-      <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-4 safe-top">
-        <h1 className="text-xl font-bold text-charcoal-50">Match History</h1>
-        <p className="text-charcoal-400 text-sm">All games, all time</p>
+      <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-4 safe-top flex justify-between items-center transition-colors duration-300">
+        <div>
+          <h1 className="text-xl font-bold text-charcoal-50">Match History</h1>
+          <p className="text-charcoal-400 text-sm">All games, all time</p>
+        </div>
+        <ThemeToggle />
       </div>
 
       <div className="p-4 max-w-2xl mx-auto">
@@ -87,7 +91,7 @@ export default function HistoryPage() {
                 let mounted = true;
                 load(() => mounted);
               }}
-              className="px-4 py-2 bg-charcoal-800 hover:bg-charcoal-700 text-white text-sm font-bold rounded-lg transition-all flex items-center gap-2 mx-auto"
+              className="px-4 py-2 bg-charcoal-800 hover:bg-charcoal-700 text-charcoal-50 text-sm font-bold rounded-lg transition-all flex items-center gap-2 mx-auto"
             >
               <RotateCcw size={14} />
               Retry
@@ -102,7 +106,7 @@ export default function HistoryPage() {
               key={f.v}
               onClick={() => setFilter(f.v as typeof filter)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                filter === f.v ? 'bg-accent-600 text-white' : 'text-charcoal-400 hover:text-charcoal-200'
+                filter === f.v ? 'bg-accent-600 text-charcoal-50' : 'text-charcoal-400 hover:text-charcoal-200'
               }`}
             >
               {f.l}

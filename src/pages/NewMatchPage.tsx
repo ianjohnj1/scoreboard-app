@@ -25,13 +25,38 @@ function generateUUID() {
 const SPORTS = [
   { id: 'cricket', label: 'Cricket', icon: '🏏', team: true, desc: 'Traditional or backyard match types' },
   { id: 'golf', label: 'Golf', icon: '⛳', team: false, desc: '9 or 18-hole scorecard with par tracking' },
-  { id: 'darts', label: 'Darts (501)', icon: '🎯', team: false, desc: 'Countdown scoring with checkouts' },
+  { id: 'darts', label: 'Darts', icon: '🎯', team: false, desc: 'Standard countdown, elimination, or round-the-board mini games.' },
   { id: 'table_tennis', label: 'Table Tennis', icon: '🏓', team: true, desc: 'Win-by-2 game tracking' },
   { id: 'pool', label: '8-Ball Pool', icon: '🎱', team: true, desc: 'Frame tracking & golden breaks' },
   { id: 'basketball', label: 'Basketball', icon: '🏀', team: true, desc: '1/2/3 point tracking with players' },
   { id: 'cards', label: 'Card Games', icon: '🃏', team: false, desc: 'End-of-round grid scoring' },
   { id: 'custom', label: 'Custom Sport', icon: '🎮', team: null, desc: 'Build your own scoring interface' },
 ];
+
+type DartsVariant = 'countdown' | 'around_the_world' | 'killer';
+type DartsRingRule = 'any_segment' | 'doubles_only' | 'triples_only';
+
+const DARTS_MODE_META: Record<DartsVariant, {
+  title: string;
+  description: string;
+  summary: string;
+}> = {
+  countdown: {
+    title: '501 / 301 Countdown',
+    description: 'Classic countdown scoring with custom checkout rules.',
+    summary: 'Players start with a set score and race to reduce it to exactly 0. Each player gets 3 throws per turn. If a throw drops the score below 0 (or to 1 if Double-Out is on), the turn is a Bust and resets.',
+  },
+  around_the_world: {
+    title: 'Around the World',
+    description: 'A chronological race to hit segments 1 through 20 and the Bullseye.',
+    summary: 'A chronological race around the dartboard. Every player starts targeting segment 1 and cannot advance to the next number until it is successfully hit. The first player to hit all segments up to 20 and finish on the Bullseye wins.',
+  },
+  killer: {
+    title: 'Killer',
+    description: "Multiplayer elimination game. Become a killer to hunt your opponents' lives.",
+    summary: "Each player must first hit their assigned number segment (or specific ring) to activate 'Killer' status. Once achieved, you score points by hitting your opponents' segments to eliminate their lives. Last player standing wins.",
+  },
+};
 
 const PIZZA_PUTT_COURSE = [
   { number: 1, name: 'The Bears Den', par: 2 },
@@ -47,8 +72,8 @@ const PIZZA_PUTT_COURSE = [
   { number: 11, name: 'Stone Henge', par: 3 },
 ];
 
-// Added a dedicated 'cricket_variant' and 'golf_variant' sub-steps
-type Step = 'sport' | 'cricket_variant' | 'golf_variant' | 'config' | 'players';
+// Added dedicated sub-steps for sports with multiple setup modes
+type Step = 'sport' | 'cricket_variant' | 'golf_variant' | 'darts_variant' | 'config' | 'players';
 
 export default function NewMatchPage() {
   const navigate = useNavigate();
@@ -57,6 +82,7 @@ export default function NewMatchPage() {
   const [selectedSport, setSelectedSport] = useState('');
   const [cricketVariant, setCricketVariant] = useState<'classic' | 'backyard' | null>(null);
   const [golfVariant, setGolfVariant] = useState<'classic' | 'chip_off' | null>(null);
+  const [dartsVariant, setDartsVariant] = useState<DartsVariant | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
 
   // Custom config
@@ -127,13 +153,12 @@ export default function NewMatchPage() {
     if (cricketVariant === 'backyard') {
       setHouseRules({
         no_noballs: false,
-        no_wides: false,
-        max_overs: 20,
-        max_wickets: 10
+        no_wides: false
       });
     }
   }, [cricketVariant]);
   const sport = SPORTS.find(s => s.id === selectedSport);
+  const dartsModeMeta = dartsVariant ? DARTS_MODE_META[dartsVariant] : null;
   
   // Backyard mode forces an individual format setup
   // Practice mode also defaults to individual format to allow flexible multi-player "nets"
@@ -209,9 +234,11 @@ export default function NewMatchPage() {
     if (step === 'sport') navigate(-1);
     else if (step === 'cricket_variant') setStep('sport');
     else if (step === 'golf_variant') setStep('sport');
+    else if (step === 'darts_variant') setStep('sport');
     else if (step === 'config') {
       if (selectedSport === 'cricket') setStep('cricket_variant');
       else if (selectedSport === 'golf') setStep('golf_variant');
+      else if (selectedSport === 'darts') setStep('darts_variant');
       else setStep('sport');
     } else if (step === 'players') setStep('config');
   };
@@ -240,7 +267,14 @@ export default function NewMatchPage() {
           created_by: currentUser?.id || null,
           house_rules: {
             ...houseRules,
-            variant: selectedSport === 'cricket' ? cricketVariant : (selectedSport === 'golf' ? golfVariant : null),
+            variant:
+              selectedSport === 'cricket'
+                ? cricketVariant
+                : selectedSport === 'golf'
+                  ? golfVariant
+                  : selectedSport === 'darts'
+                    ? dartsVariant
+                    : null,
             course_data: selectedSport === 'golf' && golfVariant === 'classic' ? golfCourse : null,
             holes: selectedSport === 'golf' ? (golfVariant === 'chip_off' ? (houseRules.total_rounds as number || 9) : golfCourse.length) : null,
           },
@@ -250,7 +284,8 @@ export default function NewMatchPage() {
             buttons: customButtons
           } : {
             cricket_variant: cricketVariant || null,
-            golf_variant: golfVariant || null
+            golf_variant: golfVariant || null,
+            darts_sub_mode_id: dartsVariant || null
           }
         });
   
@@ -392,7 +427,17 @@ export default function NewMatchPage() {
           <div>
             <h1 className="text-xl font-bold text-charcoal-50">New Match</h1>
             <p className="text-charcoal-400 text-sm">
-              {step === 'sport' ? 'Choose a sport' : step === 'cricket_variant' ? 'Select Cricket Type' : step === 'config' ? 'Configure rules' : 'Add players'}
+              {step === 'sport'
+                ? 'Choose a sport'
+                : step === 'cricket_variant'
+                  ? 'Select Cricket Type'
+                  : step === 'golf_variant'
+                    ? 'Select Golf Mode'
+                    : step === 'darts_variant'
+                      ? 'Select Darts Mode'
+                      : step === 'config'
+                        ? 'Configure rules'
+                        : 'Add players'}
             </p>
           </div>
         </div>
@@ -409,12 +454,23 @@ export default function NewMatchPage() {
                 onClick={() => {
                   setSelectedSport(s.id);
                   if (s.id === 'cricket') {
+                    setDartsVariant(null);
                     setStep('cricket_variant');
                   } else if (s.id === 'golf') {
+                    setDartsVariant(null);
                     setStep('golf_variant');
+                  } else if (s.id === 'darts') {
+                    setCricketVariant(null);
+                    setGolfVariant(null);
+                    setDartsVariant(null);
+                    setTeam1Players(activeUser ? [activeUser] : []);
+                    setTeam2Players([]);
+                    setIndividualPlayers(activeUser ? [activeUser] : []);
+                    setStep('darts_variant');
                   } else {
                     setCricketVariant(null);
                     setGolfVariant(null);
+                    setDartsVariant(null);
                     setTeam1Players(activeUser ? [activeUser] : []);
                     setTeam2Players([]);
                     setIndividualPlayers(activeUser ? [activeUser] : []);
@@ -528,6 +584,91 @@ export default function NewMatchPage() {
         </div>
       )}
 
+      {/* STEP 1.7: Darts Branch Option */}
+      {step === 'darts_variant' && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-charcoal-400 uppercase tracking-wider">Select Darts Mode</h2>
+
+          <button
+            onClick={() => {
+              setSelectedSport('darts');
+              setDartsVariant('countdown');
+              setTeam1Players(activeUser ? [activeUser] : []);
+              setTeam2Players([]);
+              setIndividualPlayers(activeUser ? [activeUser] : []);
+              setHouseRules({
+                variant: 'countdown',
+                start_score: 501,
+                double_out: true
+              });
+              setStep('config');
+            }}
+            className="w-full card p-5 flex items-center gap-4 text-left hover:border-accent-500/50 transition-all"
+          >
+            <div className="w-12 h-12 rounded-xl bg-accent-950/40 border border-accent-800 flex items-center justify-center text-2xl text-accent-400">
+              🎯
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-charcoal-50 text-base">{DARTS_MODE_META.countdown.title}</h3>
+              <p className="text-charcoal-400 text-sm mt-0.5">{DARTS_MODE_META.countdown.description}</p>
+            </div>
+            <ChevronRight size={18} className="text-charcoal-500" />
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedSport('darts');
+              setDartsVariant('around_the_world');
+              setTeam1Players(activeUser ? [activeUser] : []);
+              setTeam2Players([]);
+              setIndividualPlayers(activeUser ? [activeUser] : []);
+              setHouseRules({
+                variant: 'around_the_world',
+                skip_ahead_via_multiples: false,
+                ring_restriction: 'any_segment'
+              });
+              setStep('config');
+            }}
+            className="w-full card p-5 flex items-center gap-4 text-left hover:border-warning-500/50 transition-all"
+          >
+            <div className="w-12 h-12 rounded-xl bg-warning-950/30 border border-warning-800 flex items-center justify-center text-2xl text-warning-400">
+              🌍
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-charcoal-50 text-base">{DARTS_MODE_META.around_the_world.title}</h3>
+              <p className="text-charcoal-400 text-sm mt-0.5">{DARTS_MODE_META.around_the_world.description}</p>
+            </div>
+            <ChevronRight size={18} className="text-charcoal-500" />
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedSport('darts');
+              setDartsVariant('killer');
+              setTeam1Players(activeUser ? [activeUser] : []);
+              setTeam2Players([]);
+              setIndividualPlayers(activeUser ? [activeUser] : []);
+              setHouseRules({
+                variant: 'killer',
+                starting_lives: 3,
+                killer_activation_ring: 'doubles_only'
+              });
+              setStep('config');
+            }}
+            className="w-full card p-5 flex items-center gap-4 text-left hover:border-danger-500/50 transition-all"
+          >
+            <div className="w-12 h-12 rounded-xl bg-danger-950/30 border border-danger-800 flex items-center justify-center text-2xl text-danger-400">
+              💀
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-charcoal-50 text-base">{DARTS_MODE_META.killer.title}</h3>
+              <p className="text-charcoal-400 text-sm mt-0.5">{DARTS_MODE_META.killer.description}</p>
+            </div>
+            <ChevronRight size={18} className="text-charcoal-500" />
+          </button>
+        </div>
+      )}
+
 
         {/* STEP 2: Configuration */}
         {step === 'config' && sport && (
@@ -572,15 +713,93 @@ export default function NewMatchPage() {
             <div className="card p-4 space-y-3">
               <h3 className="font-bold text-charcoal-100 flex items-center gap-2">
                 <span className="text-xl">{sport.icon}</span>
-                {sport.label} {cricketVariant && `(${cricketVariant === 'classic' ? 'Classic' : 'Backyard'})`} Rules
+                {selectedSport === 'cricket'
+                  ? `${sport.label} ${cricketVariant ? `(${cricketVariant === 'classic' ? 'Classic' : 'Backyard'}) ` : ''}Rules`
+                  : selectedSport === 'darts' && dartsModeMeta
+                    ? `${sport.label} (${dartsModeMeta.title}) Rules`
+                    : `${sport.label} Rules`}
               </h3>
               
               {selectedSport === 'cricket' ? (
                 <div className="space-y-3 pt-2">
                   <RuleToggle label="No No-Balls rule" value={houseRules.no_noballs as boolean} onChange={v => setHouseRules(prev => ({...prev, no_noballs: v}))} />
                   <RuleToggle label="No Wide rule" value={houseRules.no_wides as boolean} onChange={v => setHouseRules(prev => ({...prev, no_wides: v}))} />
-                  <RuleNumber label="Max overs" value={houseRules.max_overs as number ?? 20} onChange={v => setHouseRules(prev => ({...prev, max_overs: v}))} />
-                  <RuleNumber label="Max wickets" value={houseRules.max_wickets as number ?? 10} onChange={v => setHouseRules(prev => ({...prev, max_wickets: v}))} />
+                  {cricketVariant !== 'backyard' && (
+                    <>
+                      <RuleNumber label="Max overs" value={houseRules.max_overs as number ?? 20} onChange={v => setHouseRules(prev => ({...prev, max_overs: v}))} />
+                      <RuleNumber label="Max wickets" value={houseRules.max_wickets as number ?? 10} onChange={v => setHouseRules(prev => ({...prev, max_wickets: v}))} />
+                    </>
+                  )}
+                </div>
+              ) : selectedSport === 'darts' && dartsVariant && dartsModeMeta ? (
+                <div className="space-y-4 pt-2">
+                  <div className="rounded-xl border border-charcoal-700 bg-charcoal-900/50 px-3 py-3">
+                    <p className="text-sm leading-relaxed text-charcoal-400">{dartsModeMeta.summary}</p>
+                  </div>
+
+                  {dartsVariant === 'countdown' ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-charcoal-200 text-sm">Start Score</span>
+                        <div className="flex items-center gap-2">
+                          {[301, 501].map(score => (
+                            <button
+                              key={score}
+                              onClick={() => setHouseRules(prev => ({ ...prev, start_score: score }))}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                                (houseRules.start_score as number ?? 501) === score ? 'bg-accent-600 text-charcoal-50' : 'bg-charcoal-700 text-charcoal-400'
+                              }`}
+                            >
+                              {score}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <RuleToggle
+                        label="Enforce Double-Out"
+                        value={houseRules.double_out as boolean ?? true}
+                        onChange={v => setHouseRules(prev => ({ ...prev, double_out: v }))}
+                      />
+                    </div>
+                  ) : dartsVariant === 'around_the_world' ? (
+                    <div className="space-y-4">
+                      <RuleToggle
+                        label="Skip Ahead via Multiples"
+                        value={houseRules.skip_ahead_via_multiples as boolean ?? false}
+                        onChange={v => setHouseRules(prev => ({ ...prev, skip_ahead_via_multiples: v }))}
+                      />
+                      <RuleSelect
+                        label="Ring Restriction"
+                        value={houseRules.ring_restriction as DartsRingRule ?? 'any_segment'}
+                        options={[
+                          { value: 'any_segment', label: 'Any Segment' },
+                          { value: 'doubles_only', label: 'Doubles Only' },
+                          { value: 'triples_only', label: 'Triples Only' },
+                        ]}
+                        onChange={v => setHouseRules(prev => ({ ...prev, ring_restriction: v }))}
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <RuleNumber
+                        label="Starting Lives"
+                        value={houseRules.starting_lives as number ?? 3}
+                        min={1}
+                        max={10}
+                        onChange={v => setHouseRules(prev => ({ ...prev, starting_lives: v }))}
+                      />
+                      <RuleSelect
+                        label="Target Ring to Become Killer"
+                        value={houseRules.killer_activation_ring as DartsRingRule ?? 'doubles_only'}
+                        options={[
+                          { value: 'any_segment', label: 'Any Segment' },
+                          { value: 'doubles_only', label: 'Doubles Only' },
+                          { value: 'triples_only', label: 'Triples Only' },
+                        ]}
+                        onChange={v => setHouseRules(prev => ({ ...prev, killer_activation_ring: v }))}
+                      />
+                    </div>
+                  )}
                 </div>
               ) : selectedSport === 'golf' && golfVariant === 'classic' ? (
                 <div className="space-y-4 pt-2">
@@ -603,7 +822,7 @@ export default function NewMatchPage() {
                             });
                           }}
                           className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
-                            golfCourse.length === n ? 'bg-accent-600 text-white' : 'bg-charcoal-700 text-charcoal-400'
+                            golfCourse.length === n ? 'bg-accent-600 text-charcoal-50' : 'bg-charcoal-700 text-charcoal-400'
                           }`}
                         >
                           {n}
@@ -778,14 +997,58 @@ function RuleToggle({ label, value, onChange }: { label: string; value: boolean;
   );
 }
 
-function RuleNumber({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function RuleSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-charcoal-200 text-sm">{label}</span>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value as T)}
+        className="min-w-[10rem] rounded-lg border border-charcoal-600 bg-charcoal-800 px-3 py-2 text-right text-sm text-charcoal-100 outline-none"
+      >
+        {options.map(option => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function RuleNumber({
+  label,
+  value,
+  onChange,
+  min = 1,
+  max,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+}) {
+  const decrementValue = Math.max(min, value - 1);
+  const incrementValue = max !== undefined ? Math.min(max, value + 1) : value + 1;
+
   return (
     <div className="flex items-center justify-between">
       <span className="text-charcoal-200 text-sm">{label}</span>
       <div className="flex items-center gap-2">
-        <button onClick={() => onChange(Math.max(1, value - 1))} className="w-8 h-8 rounded-lg bg-charcoal-700 border border-charcoal-600 text-charcoal-200 font-bold">-</button>
+        <button onClick={() => onChange(decrementValue)} className="w-8 h-8 rounded-lg bg-charcoal-700 border border-charcoal-600 text-charcoal-200 font-bold">-</button>
         <span className="w-8 text-center text-charcoal-100 font-mono font-semibold">{value}</span>
-        <button onClick={() => onChange(value + 1)} className="w-8 h-8 rounded-lg bg-charcoal-700 border border-charcoal-600 text-charcoal-200 font-bold">+</button>
+        <button onClick={() => onChange(incrementValue)} className="w-8 h-8 rounded-lg bg-charcoal-700 border border-charcoal-600 text-charcoal-200 font-bold">+</button>
       </div>
     </div>
   );

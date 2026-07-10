@@ -9,6 +9,7 @@ import { linkGuestAccount, getAllProfiles } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/Avatar';
 import Modal from '../components/Modal';
+import ThemeToggle from '../components/ThemeToggle';
 import type { Profile, PlayerCareerAnalytics } from '../lib/supabase';
 
 export default function ProfilePage() {
@@ -235,7 +236,7 @@ export default function ProfilePage() {
             {!isOwnProfile && (
               <button 
                 onClick={() => navigate(-1)}
-                className="p-2 rounded-xl bg-charcoal-700 text-charcoal-300 hover:text-white transition-colors mr-2"
+                className="p-2 rounded-xl bg-charcoal-700 text-charcoal-300 hover:text-charcoal-50 transition-colors mr-2"
               >
                 <ArrowLeft size={20} />
               </button>
@@ -257,7 +258,8 @@ export default function ProfilePage() {
             </div>
           </div>
           {isOwnProfile ? (
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <ThemeToggle />
               <button
                 onClick={() => setShowSettingsModal(true)}
                 className="p-2 rounded-xl hover:bg-charcoal-700 text-charcoal-400 transition-colors"
@@ -275,7 +277,7 @@ export default function ProfilePage() {
             <button
               onClick={handleCompare}
               disabled={compareLoading}
-              className="flex items-center gap-2 bg-accent-600 hover:bg-accent-500 text-white px-4 py-2 rounded-xl font-bold text-sm transition-all shadow-lg shadow-accent-900/20 active:scale-95"
+              className="flex items-center gap-2 bg-accent-600 hover:bg-accent-500 text-charcoal-50 px-4 py-2 rounded-xl font-bold text-sm transition-all shadow-lg shadow-accent-900/20 active:scale-95"
             >
               {compareLoading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -307,7 +309,7 @@ export default function ProfilePage() {
               key={t.l}
               onClick={() => setIsPracticeFilter(t.v)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                isPracticeFilter === t.v ? 'bg-accent-600 text-white' : 'text-charcoal-400'
+                isPracticeFilter === t.v ? 'bg-accent-600 text-charcoal-50' : 'text-charcoal-400'
               }`}
             >
               {t.l}
@@ -321,7 +323,7 @@ export default function ProfilePage() {
               key={t.v}
               onClick={() => setTab(t.v as typeof tab)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                tab === t.v ? 'bg-accent-600 text-white' : 'text-charcoal-400'
+                tab === t.v ? 'bg-accent-600 text-charcoal-50' : 'text-charcoal-400'
               }`}
             >
               {t.l}
@@ -338,7 +340,7 @@ export default function ProfilePage() {
         ) : (
           <div className="space-y-3">
             {stats.map(s => (
-                <div key={s.id || `${s.profile_id}-${s.sport}`} className="card p-4">
+                <div key={`${s.profile_id}-${s.sport}-${s.is_practice}`} className="card p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-semibold text-charcoal-100 capitalize">{s.sport.replace('_', ' ')}</h3>
                     <div className="flex items-center gap-1 text-warning-400">
@@ -417,6 +419,39 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   )}
+
+                  {s.sport === 'darts' && (
+                    <div className="space-y-2 mt-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-indigo-950/20 border-indigo-900/30">
+                          <p className="text-indigo-500 text-[10px] uppercase font-bold">3-Dart Avg</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.countdown_ppr > 0 ? s.countdown_ppr.toFixed(1) : '-'}</p>
+                        </div>
+                        <div className="stat-card bg-indigo-950/20 border-indigo-900/30">
+                          <p className="text-indigo-500 text-[10px] uppercase font-bold">First 9 Avg</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.first_nine_ppr > 0 ? s.first_nine_ppr.toFixed(1) : '-'}</p>
+                        </div>
+                        <div className="stat-card bg-indigo-950/20 border-indigo-900/30">
+                          <p className="text-indigo-500 text-[10px] uppercase font-bold">Checkout %</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.checkout_pct > 0 ? `${s.checkout_pct.toFixed(1)}%` : '0.0%'}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-indigo-950/20 border-indigo-900/30">
+                          <p className="text-indigo-500 text-[10px] uppercase font-bold">ATW Efficiency</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.atw_efficiency > 0 ? s.atw_efficiency.toFixed(1) : '-'}</p>
+                        </div>
+                        <div className="stat-card bg-indigo-950/20 border-indigo-900/30">
+                          <p className="text-indigo-500 text-[10px] uppercase font-bold">Lethality %</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.killer_lethality > 0 ? `${s.killer_lethality.toFixed(1)}%` : '0.0%'}</p>
+                        </div>
+                        <div className="stat-card bg-indigo-950/20 border-indigo-900/30">
+                          <p className="text-indigo-500 text-[10px] uppercase font-bold">Avg Survival</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.killer_survival > 0 ? s.killer_survival.toFixed(1) : '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
             ))}
           </div>
@@ -482,7 +517,7 @@ export default function ProfilePage() {
                 <div className="relative group">
                   <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} url={targetProfile.avatar_url} size="xl" />
                   <label className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-                    <Edit3 size={24} className="text-white" />
+                    <Edit3 size={24} className="text-charcoal-50" />
                     <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
                   </label>
                   {uploadingAvatar && (
@@ -575,11 +610,11 @@ export default function ProfilePage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-charcoal-800/50 border border-charcoal-700">
               <Avatar name={currentUser?.display_name || ''} color={currentUser?.avatar_color} size="lg" />
-              <p className="text-sm font-black text-white uppercase tracking-tight text-center truncate w-full">You</p>
+              <p className="text-sm font-black text-charcoal-50 uppercase tracking-tight text-center truncate w-full">You</p>
             </div>
             <div className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-charcoal-800/50 border border-charcoal-700">
               <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} size="lg" />
-              <p className="text-sm font-black text-white uppercase tracking-tight text-center truncate w-full">{targetProfile.display_name}</p>
+              <p className="text-sm font-black text-charcoal-50 uppercase tracking-tight text-center truncate w-full">{targetProfile.display_name}</p>
             </div>
           </div>
 
@@ -614,7 +649,17 @@ export default function ProfilePage() {
                         <ComparisonRow label="Efficiency" val1={mySportStats?.scoring_efficiency} val2={theirSportStats?.scoring_efficiency} format="pct" />
                         <ComparisonRow label="Ace Freq" val1={mySportStats?.ace_frequency} val2={theirSportStats?.ace_frequency} format="pct" />
                         <ComparisonRow label="Hazard Avoid" val1={mySportStats?.hazard_avoidance_rating} val2={theirSportStats?.hazard_avoidance_rating} format="pct" />
-                        <ComparisonRow label="Avg Proximity" val1={mySportStats?.average_proximity_tier} val2={theirSportStats?.average_proximity_tier} format="float" />
+                        <ComparisonRow label="Avg Proximity" val1={mySportStats?.average_proximity_tier} val2={theirSportStats?.average_proximity_tier} format="float" lowerIsBetter />
+                      </>
+                    )}
+                    {sport === 'darts' && (
+                      <>
+                        <ComparisonRow label="3-Dart Avg" val1={mySportStats?.countdown_ppr} val2={theirSportStats?.countdown_ppr} format="float" />
+                        <ComparisonRow label="First 9 Avg" val1={mySportStats?.first_nine_ppr} val2={theirSportStats?.first_nine_ppr} format="float" />
+                        <ComparisonRow label="Checkout %" val1={mySportStats?.checkout_pct} val2={theirSportStats?.checkout_pct} format="pct" />
+                        <ComparisonRow label="ATW Efficiency" val1={mySportStats?.atw_efficiency} val2={theirSportStats?.atw_efficiency} format="float" lowerIsBetter />
+                        <ComparisonRow label="Lethality %" val1={mySportStats?.killer_lethality} val2={theirSportStats?.killer_lethality} format="pct" />
+                        <ComparisonRow label="Avg Survival" val1={mySportStats?.killer_survival} val2={theirSportStats?.killer_survival} format="float" />
                       </>
                     )}
                     <ComparisonRow label="Win Rate" 

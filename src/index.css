@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Oswald:ital,wght@0,500;0,700;1,500;1,700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,7 +6,35 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light dark;
+    
+    /* LIGHT MODE */
+    --color-charcoal-50: 9 9 11; /* text */
+    --color-charcoal-100: 24 24 27; /* sub-text */
+    --color-charcoal-200: 39 39 42; 
+    --color-charcoal-300: 63 63 70; 
+    --color-charcoal-400: 82 82 91; 
+    --color-charcoal-500: 113 113 122; 
+    --color-charcoal-600: 161 161 170; 
+    --color-charcoal-700: 228 228 231; 
+    --color-charcoal-800: 255 255 255; /* white card bg */
+    --color-charcoal-900: 248 249 250; /* light stadium app bg */
+    --color-charcoal-950: 244 244 245; 
+  }
+
+  .dark {
+    /* DARK MODE */
+    --color-charcoal-50: 244 244 245;
+    --color-charcoal-100: 228 228 231;
+    --color-charcoal-200: 212 212 216;
+    --color-charcoal-300: 161 161 170;
+    --color-charcoal-400: 113 113 122;
+    --color-charcoal-500: 82 82 91;
+    --color-charcoal-600: 63 63 70;
+    --color-charcoal-700: 39 39 42; 
+    --color-charcoal-800: 24 24 27; /* dark card bg */
+    --color-charcoal-900: 9 9 11; /* dark app bg */
+    --color-charcoal-950: 4 4 5;
   }
 
   * {
@@ -14,8 +42,12 @@
   }
 
   body {
-    @apply bg-charcoal-900 text-charcoal-100 font-sans antialiased;
+    @apply bg-charcoal-900 text-charcoal-100 font-sans antialiased transition-colors duration-300;
     overscroll-behavior: none;
+  }
+
+  h1, h2, h3, .metric-value {
+    @apply font-athletic uppercase tracking-wider italic font-bold;
   }
 
   ::-webkit-scrollbar {
@@ -40,16 +72,19 @@
 
 @layer components {
   .card {
-    @apply bg-charcoal-800 border border-charcoal-700 rounded-xl;
+    @apply bg-charcoal-800 border-2 border-success-500 rounded-none shadow-[0_0_15px_rgba(34,197,94,0.4)] transition-all duration-300;
+    clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
   }
 
   .card-elevated {
-    @apply bg-charcoal-800 border border-charcoal-600 rounded-xl shadow-lg shadow-black/40;
+    @apply bg-charcoal-800 border-2 border-success-500 rounded-none shadow-[0_0_20px_rgba(34,197,94,0.6)] transition-all duration-300;
+    clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
   }
 
   .btn-primary {
-    @apply bg-accent-600 hover:bg-accent-500 active:bg-accent-700 text-white font-semibold rounded-lg px-4 py-3
-           transition-all duration-150 ease-out active:scale-95 select-none touch-none;
+    @apply bg-accent-600 hover:bg-accent-500 active:bg-accent-700 text-white font-semibold px-4 py-3
+           transition-all duration-150 ease-out active:scale-95 select-none touch-none rounded-none;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   }
 
   .btn-secondary {
@@ -172,6 +207,17 @@
     to { transform: translateY(0); }
   }
 
+  @keyframes dartboard-segment-pulse {
+    0% { transform: scale(1); opacity: 0.82; }
+    55% { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes dartboard-menu-pop {
+    0% { transform: translate(-50%, -50%) scale(0.92); opacity: 0; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+
   .animate-marquee {
     animation: marquee 15s linear infinite;
     display: flex;
@@ -184,6 +230,14 @@
 
   .animate-slide-down {
     animation: slide-down 0.3s ease-out;
+  }
+
+  .animate-dartboard-pulse {
+    animation: dartboard-segment-pulse 0.18s ease-out;
+  }
+
+  .animate-dartboard-menu {
+    animation: dartboard-menu-pop 0.16s ease-out;
   }
 }
 

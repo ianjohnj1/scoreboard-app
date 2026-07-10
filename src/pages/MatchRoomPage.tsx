@@ -52,6 +52,7 @@ export default function MatchRoomPage() {
   const [guestName, setGuestName] = useState('');
   const [isAddingGuest, setIsAddingGuest] = useState(false);
   const [isTvDisplayMode, setIsTvDisplayMode] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -61,8 +62,11 @@ export default function MatchRoomPage() {
   useEffect(() => {
     if (showEditRoster) {
       getAllProfiles().then(setAllProfiles).catch(console.error);
+      if (teams.length > 0 && !selectedTeamId) {
+        setSelectedTeamId(teams[0].id);
+      }
     }
-  }, [showEditRoster]);
+  }, [showEditRoster, teams, selectedTeamId]);
 
   const loadMatch = useCallback(async (isMounted?: () => boolean) => {
     if (!roomCode) return;
@@ -179,6 +183,7 @@ export default function MatchRoomPage() {
           match_id: match.id,
           profile_id: profileId,
           role: 'player',
+          team_id: teams.length > 0 ? selectedTeamId : null,
           batting_order: players.length + 1
         });
       if (error) throw error;
@@ -284,12 +289,12 @@ export default function MatchRoomPage() {
   const SportRoom = getSportRoom(match);
 
   return (
-    <div className="min-h-screen bg-charcoal-900 flex flex-col relative">
+    <div className="h-[100dvh] bg-charcoal-900 flex flex-col relative">
       {/* TV Mode Escape Badge */}
       {isTvDisplayMode && (
         <button
           onClick={() => setIsTvDisplayMode(false)}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-accent-600 text-white px-6 py-3 rounded-full font-black uppercase tracking-widest text-xs shadow-[0_0_30px_rgba(37,99,235,0.4)] animate-pulse flex items-center gap-2 border-2 border-accent-400/50"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-accent-600 text-charcoal-50 px-6 py-3 rounded-full font-black uppercase tracking-widest text-xs shadow-[0_0_30px_rgba(37,99,235,0.4)] animate-pulse flex items-center gap-2 border-2 border-accent-400/50"
         >
           <Monitor size={16} />
           TV Mode Active — Click to Show Scoring Buttons
@@ -399,14 +404,20 @@ export default function MatchRoomPage() {
             <div className="flex flex-wrap gap-2">
               {players.map(p => {
                 const profile = profiles.get(p.profile_id);
+                const team = teams.find(t => t.id === p.team_id);
                 if (!profile) return null;
                 return (
                   <div key={p.profile_id} className="flex items-center gap-1.5 bg-charcoal-800 rounded-full pl-1 pr-2 py-1 border border-charcoal-700">
                     <Avatar name={profile.display_name} color={profile.avatar_color} size="xs" />
-                    <span className="text-charcoal-200 text-xs">{profile.display_name}</span>
+                    <span className="text-charcoal-200 text-xs font-medium">{profile.display_name}</span>
+                    {team && (
+                      <span className="text-[9px] uppercase tracking-wider font-bold opacity-60 ml-1" style={{ color: team.team_color }}>
+                        ({team.team_name.substring(0, 3)})
+                      </span>
+                    )}
                     <button 
                       onClick={() => handleRemovePlayer(p.profile_id)}
-                      className="text-charcoal-500 hover:text-danger-400"
+                      className="text-charcoal-500 hover:text-danger-400 ml-1"
                     >
                       <X size={12} />
                     </button>
@@ -421,6 +432,25 @@ export default function MatchRoomPage() {
           {/* Add Player */}
           <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
             <h3 className="text-xs font-black text-charcoal-500 uppercase tracking-widest">Add to Match</h3>
+            
+            {teams.length > 0 && (
+              <div className="flex gap-2 p-1 bg-charcoal-900 rounded-lg border border-charcoal-700">
+                {teams.map(team => (
+                  <button
+                    key={team.id}
+                    onClick={() => setSelectedTeamId(team.id)}
+                    className={`flex-1 py-1.5 px-3 text-xs font-bold rounded transition-colors ${
+                      selectedTeamId === team.id
+                        ? 'bg-charcoal-800 text-charcoal-50 shadow-sm border border-charcoal-600'
+                        : 'text-charcoal-400 hover:text-charcoal-200'
+                    }`}
+                  >
+                    {team.team_name}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-charcoal-500" />
               <input 

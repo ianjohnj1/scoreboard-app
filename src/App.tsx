@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Zap, RotateCcw } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import BottomNav from './components/BottomNav';
 
 import LoginPage from './pages/LoginPage';
@@ -18,7 +19,7 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-charcoal-900 flex items-center justify-center text-white">
+      <div className="min-h-screen bg-charcoal-900 flex items-center justify-center text-charcoal-50">
         Loading...
       </div>
     );
@@ -38,14 +39,14 @@ function AppRoutes() {
           <div className="w-16 h-16 bg-danger-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <Zap size={32} className="text-danger-400" />
           </div>
-          <h2 className="text-white text-2xl font-bold mb-3">Service Unavailable</h2>
+          <h2 className="text-charcoal-50 text-2xl font-bold mb-3">Service Unavailable</h2>
           <p className="text-charcoal-400 mb-8 leading-relaxed">
             We're having trouble connecting to the scoreboard servers. 
             Please check your internet connection and try again.
           </p>
           <button
             onClick={retryConnection}
-            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-charcoal-50 font-bold rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
           >
             <RotateCcw size={18} />
             Reconnect Now
@@ -57,7 +58,7 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-charcoal-900 flex items-center justify-center text-white">
+      <div className="min-h-screen bg-charcoal-900 flex items-center justify-center text-charcoal-50">
         <div className="w-8 h-8 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
       </div>
     );
@@ -156,9 +157,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

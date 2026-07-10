@@ -28,7 +28,7 @@ export default function Avatar({ name, color = '#3b82f6', url, size = 'md', clas
 
   return (
     <div
-      className={`${sizeClasses[size]} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 ${className}`}
+      className={`${sizeClasses[size]} rounded-full flex items-center justify-center font-bold text-charcoal-50 flex-shrink-0 ${className}`}
       style={{ backgroundColor: color }}
     >
       {getInitials(name)}

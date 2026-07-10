@@ -6,6 +6,28 @@ export interface MatchStats {
   is_winner: boolean;
   score: number;
   extra_stats: Record<string, any>;
+  best_sport?: string;
+}
+
+function getDartsEventScore(eventData: Record<string, any>) {
+  if (eventData?.throw && typeof eventData.throw.scoredPoints === 'number') {
+    return eventData.throw.scoredPoints;
+  }
+
+  if (Array.isArray(eventData?.darts)) {
+    return eventData.darts.reduce((sum: number, dart: any) => {
+      if (typeof dart === 'number') return sum + dart;
+      return sum + (dart?.scoredPoints || 0);
+    }, 0);
+  }
+
+  return 0;
+}
+
+function getDartsEventThrowCount(eventData: Record<string, any>) {
+  if (eventData?.throw) return 1;
+  if (Array.isArray(eventData?.darts)) return eventData.darts.length;
+  return 0;
 }
 
 export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]> {
@@ -258,13 +280,37 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
             break;
           case 'darts_turn':
           case 'darts_bust':
-            const darts = (e.event_data.darts as number[]) || [];
-            existing.points += darts.reduce((a, b) => a + b, 0);
+          case 'darts_throw':
+            existing.points += getDartsEventScore(e.event_data);
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            if (e.event_type === 'darts_bust') existing.busts = (existing.busts || 0) + 1;
             break;
           case 'darts_win':
             existing.wins += 1;
-            const finalDarts = (e.event_data.darts as number[]) || [];
-            existing.points += finalDarts.reduce((a, b) => a + b, 0);
+            existing.points += getDartsEventScore(e.event_data);
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            existing.checkouts = (existing.checkouts || 0) + ((e.event_data.checkout as boolean) ? 1 : 0);
+            existing.double_out_finishes = (existing.double_out_finishes || 0) + ((e.event_data.throw?.ring === 'double' || e.event_data.throw?.ring === 'double_bull') ? 1 : 0);
+            break;
+          case 'darts_atw_throw':
+            existing.points += (e.event_data.advanced_by as number) || 0;
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            existing.atw_attempts = (existing.atw_attempts || 0) + 1;
+            existing.atw_successful_hits = (existing.atw_successful_hits || 0) + ((e.event_data.hit_target as boolean) ? 1 : 0);
+            existing.atw_advances = (existing.atw_advances || 0) + ((e.event_data.advanced_by as number) || 0);
+            existing.atw_bull_finishes = (existing.atw_bull_finishes || 0) + ((e.event_data.winner_profile_id === pid) ? 1 : 0);
+            break;
+          case 'darts_killer_throw':
+            existing.points += ((e.event_data.eliminated_player_ids as string[] | undefined)?.length || 0) * 10;
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            existing.killer_attempts = (existing.killer_attempts || 0) + 1;
+            existing.killer_activations = (existing.killer_activations || 0) + ((e.event_data.activated as boolean) ? 1 : 0);
+            existing.killer_opponent_lives_removed = (existing.killer_opponent_lives_removed || 0) + (e.event_data.hit_opponent_id ? 1 : 0);
+            existing.killer_self_penalties = (existing.killer_self_penalties || 0) + ((e.event_data.self_penalty as boolean) ? 1 : 0);
+            existing.killer_eliminations_secured = (existing.killer_eliminations_secured || 0) + ((e.event_data.eliminated_player_ids as string[] | undefined)?.filter((candidateId: string) => candidateId !== pid).length || 0);
+            existing.killer_times_eliminated = (existing.killer_times_eliminated || 0) + (((e.event_data.eliminated_player_ids as string[] | undefined) || []).includes(pid) ? 1 : 0);
+            existing.killer_target_hit_attempts = (existing.killer_target_hit_attempts || 0) + (e.event_data.throw?.segment && e.event_data.throw?.segment !== 'miss' ? 1 : 0);
+            existing.killer_target_hit_successes = (existing.killer_target_hit_successes || 0) + (((e.event_data.activated as boolean) || Boolean(e.event_data.hit_opponent_id) || (e.event_data.self_penalty as boolean)) ? 1 : 0);
             break;
           case 'tt_point':
             existing.points += 1;
@@ -618,13 +664,37 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
             break;
           case 'darts_turn':
           case 'darts_bust':
-            const darts = (e.event_data.darts as number[]) || [];
-            existing.points += darts.reduce((a, b) => a + b, 0);
+          case 'darts_throw':
+            existing.points += getDartsEventScore(e.event_data);
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            if (e.event_type === 'darts_bust') existing.busts = (existing.busts || 0) + 1;
             break;
           case 'darts_win':
             existing.wins += 1;
-            const finalDarts = (e.event_data.darts as number[]) || [];
-            existing.points += finalDarts.reduce((a, b) => a + b, 0);
+            existing.points += getDartsEventScore(e.event_data);
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            existing.checkouts = (existing.checkouts || 0) + ((e.event_data.checkout as boolean) ? 1 : 0);
+            existing.double_out_finishes = (existing.double_out_finishes || 0) + ((e.event_data.throw?.ring === 'double' || e.event_data.throw?.ring === 'double_bull') ? 1 : 0);
+            break;
+          case 'darts_atw_throw':
+            existing.points += (e.event_data.advanced_by as number) || 0;
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            existing.atw_attempts = (existing.atw_attempts || 0) + 1;
+            existing.atw_successful_hits = (existing.atw_successful_hits || 0) + ((e.event_data.hit_target as boolean) ? 1 : 0);
+            existing.atw_advances = (existing.atw_advances || 0) + ((e.event_data.advanced_by as number) || 0);
+            existing.atw_bull_finishes = (existing.atw_bull_finishes || 0) + ((e.event_data.winner_profile_id === pid) ? 1 : 0);
+            break;
+          case 'darts_killer_throw':
+            existing.points += ((e.event_data.eliminated_player_ids as string[] | undefined)?.length || 0) * 10;
+            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(e.event_data);
+            existing.killer_attempts = (existing.killer_attempts || 0) + 1;
+            existing.killer_activations = (existing.killer_activations || 0) + ((e.event_data.activated as boolean) ? 1 : 0);
+            existing.killer_opponent_lives_removed = (existing.killer_opponent_lives_removed || 0) + (e.event_data.hit_opponent_id ? 1 : 0);
+            existing.killer_self_penalties = (existing.killer_self_penalties || 0) + ((e.event_data.self_penalty as boolean) ? 1 : 0);
+            existing.killer_eliminations_secured = (existing.killer_eliminations_secured || 0) + ((e.event_data.eliminated_player_ids as string[] | undefined)?.filter((candidateId: string) => candidateId !== pid).length || 0);
+            existing.killer_times_eliminated = (existing.killer_times_eliminated || 0) + (((e.event_data.eliminated_player_ids as string[] | undefined) || []).includes(pid) ? 1 : 0);
+            existing.killer_target_hit_attempts = (existing.killer_target_hit_attempts || 0) + (e.event_data.throw?.segment && e.event_data.throw?.segment !== 'miss' ? 1 : 0);
+            existing.killer_target_hit_successes = (existing.killer_target_hit_successes || 0) + (((e.event_data.activated as boolean) || Boolean(e.event_data.hit_opponent_id) || (e.event_data.self_penalty as boolean)) ? 1 : 0);
             break;
           case 'tt_point':
             existing.points += 1;

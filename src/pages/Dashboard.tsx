@@ -5,6 +5,7 @@ import {
   QrCode, Zap, Crown, BarChart2, Trash2, RotateCcw
 } from 'lucide-react';
 import Avatar from '../components/Avatar';
+import ThemeToggle from '../components/ThemeToggle';
 import QRCodeModal from '../components/QRCodeModal';
 import { useAuth } from '../contexts/AuthContext';
 import { getRecentMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel } from '../lib/matches';
@@ -96,15 +97,18 @@ export default function Dashboard() {
   const avatarColor = currentUser?.avatar_color || 'bg-charcoal-700';
 
   return (
-    <div className="min-h-screen bg-charcoal-900 pb-24 text-white">
+    <div className="min-h-screen bg-charcoal-900 pb-24 text-charcoal-50">
       {/* Header */}
-      <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-4 safe-top">
+      <div className="bg-charcoal-800 border-b-2 border-charcoal-700 px-4 pt-12 pb-4 safe-top transition-colors duration-300">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-charcoal-400 text-sm">Welcome back,</p>
             <h1 className="text-xl font-bold text-charcoal-50">{displayName}</h1>
           </div>
-          <Avatar name={displayName} color={avatarColor} size="md" />
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <Avatar name={displayName} color={avatarColor} size="md" />
+          </div>
         </div>
       </div>
 
@@ -115,7 +119,7 @@ export default function Dashboard() {
             <div className="w-12 h-12 bg-danger-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <Zap size={24} className="text-danger-400" />
             </div>
-            <h3 className="text-white font-bold mb-2">Something went wrong</h3>
+            <h3 className="text-charcoal-50 font-bold mb-2">Something went wrong</h3>
             <p className="text-charcoal-400 text-sm mb-6 leading-relaxed">
               {error}
             </p>
@@ -124,7 +128,7 @@ export default function Dashboard() {
                 let mounted = true;
                 loadDashboardData(() => mounted);
               }}
-              className="px-6 py-2.5 bg-charcoal-800 hover:bg-charcoal-700 text-white text-sm font-bold rounded-xl transition-all active:scale-95 flex items-center gap-2 mx-auto"
+              className="px-6 py-2.5 bg-charcoal-800 hover:bg-charcoal-700 text-charcoal-50 text-sm font-bold rounded-xl transition-all active:scale-95 flex items-center gap-2 mx-auto"
             >
               <RotateCcw size={16} />
               Try Again
@@ -141,11 +145,11 @@ export default function Dashboard() {
         >
           <div>
             <p className="text-emerald-200 text-sm font-medium">Ready to play?</p>
-            <h2 className="text-white text-2xl font-bold mt-0.5">Start New Match</h2>
+            <h2 className="text-charcoal-50 text-2xl font-bold mt-0.5">Start New Match</h2>
           </div>
           <div className="w-14 h-14 bg-white/10 rounded-xl flex items-center justify-center
                           group-hover:bg-white/20 transition-colors">
-            <Plus size={28} className="text-white" />
+            <Plus size={28} className="text-charcoal-50" />
           </div>
         </button>
 
