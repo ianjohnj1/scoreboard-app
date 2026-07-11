@@ -286,7 +286,18 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
             )}
           </div>
         ) : (
-          <table className="w-full text-xs border-collapse scorecard-table">
+          <>
+            {(isSpectator || isTvDisplayMode) && match.status !== 'completed' && holes.length > 0 && (
+              <div className="p-4 pb-0">
+                <div className="flex flex-col items-center justify-center py-4 bg-charcoal-800/30 rounded-2xl border border-charcoal-700">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-danger-500 animate-pulse" />
+                    <h2 className="text-lg font-black text-charcoal-50 tracking-wide uppercase">Live Leaderboard</h2>
+                  </div>
+                </div>
+              </div>
+            )}
+            <table className="w-full text-xs border-collapse scorecard-table mt-4">
             <thead className="sticky top-0 bg-charcoal-800 z-10 shadow-lg">
               <tr>
                 <th className="text-left px-3 py-3 text-charcoal-400 font-bold uppercase tracking-wider border-b border-charcoal-700 min-w-[120px]">Hole</th>
@@ -378,6 +389,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
               </tr>
             </tbody>
           </table>
+          </>
         )}
       </div>
 

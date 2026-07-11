@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import CricketRoom from '../components/sports/CricketRoom';
 import GolfRoom from '../components/sports/GolfRoom';
 import DartsRoom from '../components/sports/DartsRoom';
+import ChipOffRoom from '../components/sports/ChipOffRoom';
 import TableTennisRoom from '../components/sports/TableTennisRoom';
 import PoolRoom from '../components/sports/PoolRoom';
 import BasketballRoom from '../components/sports/BasketballRoom';
@@ -92,7 +93,11 @@ export default function SpectatorPage() {
     );
   }
 
-  const SportRoom = sportRooms[match.sport] || CustomRoom;
+  let SportRoom = sportRooms[match.sport] || CustomRoom;
+  if (match.sport === 'golf' && match.house_rules?.variant === 'chip_off') {
+    SportRoom = ChipOffRoom;
+  }
+
   const ctx: MatchContext = {
     match,
     teams,
@@ -114,7 +119,7 @@ export default function SpectatorPage() {
             <div className="flex items-center gap-3">
               <span className="text-2xl">{getSportIcon(match.sport)}</span>
               <h1 className="text-2xl font-black text-charcoal-50">
-                {getSportLabel(match.sport, match.custom_game_name)}
+                {getSportLabel(match.sport, match.custom_game_name, match.house_rules?.variant as string | undefined)}
               </h1>
               {match.status === 'active' && (
                 <div className="flex items-center gap-1.5 bg-success-600/20 border border-success-600/30 rounded-full px-3 py-1">

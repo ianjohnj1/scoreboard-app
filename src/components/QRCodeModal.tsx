@@ -41,7 +41,7 @@ export default function QRCodeModal({ match, onClose }: QRCodeModalProps) {
           <div>
             <h2 className="text-lg font-bold text-charcoal-100">Spectator QR Code</h2>
             <p className="text-charcoal-400 text-sm">
-              {getSportIcon(match.sport)} {getSportLabel(match.sport, match.custom_game_name)}
+              {getSportIcon(match.sport)} {getSportLabel(match.sport, match.custom_game_name, match.house_rules?.variant as string | undefined)}
               {' · '}<span className="font-mono">{match.room_code}</span>
             </p>
           </div>

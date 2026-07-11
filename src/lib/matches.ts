@@ -262,7 +262,7 @@ export function getSportIcon(sport: string): string {
   return icons[sport] || '🎮';
 }
 
-export function getSportLabel(sport: string, customName?: string | null): string {
+export function getSportLabel(sport: string, customName?: string | null, variant?: string | null): string {
   if (customName) return customName;
   const labels: Record<string, string> = {
     cricket: 'Cricket',
@@ -275,5 +275,17 @@ export function getSportLabel(sport: string, customName?: string | null): string
     cards: 'Cards',
     custom: 'Custom Game',
   };
-  return labels[sport] || 'Unknown Sport';
+  
+  const baseLabel = labels[sport] || 'Unknown Sport';
+
+  if (variant) {
+    if (variant === 'chip_off') return 'Chip Off';
+    if (variant === 'backyard') return 'Backyard Cricket';
+    if (variant === 'countdown') return 'Darts - 501/301';
+    if (variant === 'around_the_world') return 'Darts - Around the World';
+    if (variant === 'killer') return 'Darts - Killer';
+    if (variant === 'classic') return baseLabel;
+  }
+
+  return baseLabel;
 }

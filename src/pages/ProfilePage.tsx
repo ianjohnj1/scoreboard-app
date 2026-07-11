@@ -111,7 +111,21 @@ export default function ProfilePage() {
 
     setUploadingAvatar(true);
     try {
-      const fileExt = file.name.split('.').pop();
+      // Intelligently determine the file extension
+      let fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+      
+      // If the extension is missing or not a standard web image, try to derive from MIME type
+      const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif'];
+      if (!allowedExtensions.includes(fileExt)) {
+        if (file.type === 'image/jpeg') fileExt = 'jpeg';
+        else if (file.type === 'image/png') fileExt = 'png';
+        else if (file.type === 'image/webp') fileExt = 'webp';
+        else if (file.type === 'image/gif') fileExt = 'gif';
+        else if (file.type === 'image/heic') fileExt = 'heic';
+        else if (file.type === 'image/heif') fileExt = 'heif';
+        else fileExt = 'jpeg'; // Safe fallback
+      }
+
       const fileName = `${currentUser.id}/${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
@@ -131,9 +145,9 @@ export default function ProfilePage() {
         .eq('id', currentUser.id);
 
       if (updateError) throw updateError;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error uploading avatar:", err);
-      alert("Failed to upload avatar.");
+      alert(`Failed to upload avatar: ${err.message || 'Please check your connection and try again.'}`);
     } finally {
       setUploadingAvatar(false);
     }

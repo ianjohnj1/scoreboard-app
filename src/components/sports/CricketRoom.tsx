@@ -855,6 +855,14 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
         {/* Full Batting Scorecard */}
         <div className="p-4 space-y-3">
+          {(isSpectator || isTvDisplayMode) && match.status !== 'completed' && (
+            <div className="mb-4 flex flex-col items-center justify-center py-4 bg-charcoal-900/30 rounded-2xl border border-charcoal-700">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-danger-500 animate-pulse" />
+                <h2 className="text-lg font-black text-charcoal-50 tracking-wide uppercase">Live Broadcast</h2>
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-2 px-2">
             <h4 className="text-[10px] font-black text-charcoal-500 uppercase tracking-[0.2em]">Batting Scorecard</h4>
             <div className="flex gap-4">

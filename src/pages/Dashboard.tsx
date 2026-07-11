@@ -197,7 +197,7 @@ export default function Dashboard() {
           <div className="space-y-2">
             {liveActivity.map(({ session, profile, match }) => {
               if (!profile || !match) return null;
-              const sportLabel = getSportLabel(match.sport || 'custom', match.custom_game_name);
+              const sportLabel = getSportLabel(match.sport || 'custom', match.custom_game_name, match.house_rules?.variant as string | undefined);
               const sportIcon = getSportIcon(match.sport || 'custom');
               
               return (
@@ -306,7 +306,7 @@ function MatchCard({
   if (!match) return null;
 
   const isLive = match.status === 'active';
-  const sportLabel = getSportLabel(match.sport || 'custom', match.custom_game_name);
+  const sportLabel = getSportLabel(match.sport || 'custom', match.custom_game_name, match.house_rules?.variant as string | undefined);
   const sportIcon = getSportIcon(match.sport || 'custom');
 
   const handleCardClick = () => {

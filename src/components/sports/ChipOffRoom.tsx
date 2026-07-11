@@ -326,10 +326,12 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
         {/* Scoring Pad or Match Summary */}
-        {(gameStats.isGameOver || match.winner_profile_id) ? (
+        {(gameStats.isGameOver || match.winner_profile_id || isSpectator || isTvDisplayMode) ? (
           <div className="flex flex-col items-center justify-center py-8 px-4 text-center bg-charcoal-900/30 rounded-2xl border border-charcoal-700">
-            <Trophy size={48} className="text-emerald-500 mb-4" />
-            <h2 className="text-2xl font-black text-charcoal-50 mb-6">Match Complete</h2>
+            {(gameStats.isGameOver || match.winner_profile_id) && <Trophy size={48} className="text-emerald-500 mb-4" />}
+            <h2 className="text-2xl font-black text-charcoal-50 mb-6">
+              {(gameStats.isGameOver || match.winner_profile_id) ? 'Match Complete' : 'Live Leaderboard'}
+            </h2>
             
             <div className="w-full space-y-4">
               {sortedLeaderboard.map((p, idx) => {
@@ -348,7 +350,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
                         <p className="font-mono text-base font-black text-charcoal-200">{stat.chips}</p>
                       </div>
                       <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-warning-500/20">
-                        <p className="text-[9px] font-bold text-warning-500 uppercase tracking-widest">10s</p>
+                        <p className="text-[8px] font-bold text-warning-500 uppercase tracking-tight">Hole In One</p>
                         <p className="font-mono text-base font-black text-warning-400">{stat.tens}</p>
                       </div>
                       <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-emerald-500/20">
@@ -454,15 +456,16 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
           </div>
         )}
 
-        {/* Leaderboard */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-2">
-            <h3 className="text-[10px] font-black text-charcoal-500 uppercase tracking-[0.2em]">Leaderboard</h3>
-            <div className="flex gap-6">
-              <span className="text-[9px] font-bold text-charcoal-600 uppercase w-8 text-center">10s</span>
-              <span className="text-[9px] font-bold text-charcoal-600 uppercase w-12 text-right">Points</span>
+        {/* Leaderboard (Only for active players, hidden in spectator/TV mode) */}
+        {(!gameStats.isGameOver && !match.winner_profile_id && !isSpectator && !isTvDisplayMode) && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-[10px] font-black text-charcoal-500 uppercase tracking-[0.2em]">Leaderboard</h3>
+              <div className="flex gap-6">
+                <span className="text-[9px] font-bold text-charcoal-600 uppercase w-8 text-center">H-I-O</span>
+                <span className="text-[9px] font-bold text-charcoal-600 uppercase w-12 text-right">Points</span>
+              </div>
             </div>
-          </div>
 
           <div className="space-y-2">
             {sortedLeaderboard.map((p, idx) => {
@@ -498,6 +501,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
             })}
           </div>
         </div>
+        )}
       </div>
 
       {/* Round Winner Modal */}

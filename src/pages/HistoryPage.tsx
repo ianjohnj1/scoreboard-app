@@ -139,7 +139,7 @@ export default function HistoryPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-charcoal-100 text-sm">
-                        {getSportLabel(match.sport || 'custom', match.custom_game_name)}
+                        {getSportLabel(match.sport || 'custom', match.custom_game_name, match.house_rules?.variant as string | undefined)}
                       </span>
                       <span className={`pill text-xs ${
                         match.status === 'active' ? 'pill-active' :

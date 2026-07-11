@@ -314,7 +314,7 @@ export default function MatchRoomPage() {
             <div className="flex items-center gap-2">
               <span className="text-xl">{getSportIcon(match.sport)}</span>
               <h1 className="font-bold text-charcoal-50 truncate">
-                {getSportLabel(match.sport, match.custom_game_name)}
+                {getSportLabel(match.sport, match.custom_game_name, match.house_rules?.variant as string | undefined)}
               </h1>
               <span className={`pill text-xs flex-shrink-0 ${
                 match.status === 'active' ? 'pill-active' :

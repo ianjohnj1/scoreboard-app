@@ -344,6 +344,64 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
     });
   }, [state.winner, state.turns, matchPlayers, variant, state.killer]);
 
+  const renderStatsGrid = () => (
+    <div className="w-full space-y-4">
+      {matchStats.map((stat, idx) => (
+        <div key={stat.player.id} className="bg-charcoal-800 rounded-xl p-4 border border-charcoal-700 text-left">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-6 text-center font-mono font-black text-charcoal-500 text-sm">{idx + 1}</div>
+            <Avatar name={stat.player.display_name} color={stat.player.avatar_color} size="sm" />
+            <span className="font-bold text-charcoal-100 flex-1 truncate">{stat.player.display_name}</span>
+            {stat.player.id === state.winner && (
+              <span className="rounded-full bg-success-900/40 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-success-400 border border-success-500/20">
+                Winner
+              </span>
+            )}
+          </div>
+          
+          {variant === 'countdown' && (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-charcoal-900/50 rounded-lg p-2 text-center">
+                <p className="text-[9px] font-bold text-charcoal-500 uppercase tracking-widest">Darts</p>
+                <p className="font-mono text-base font-black text-charcoal-200">{stat.dartsThrown}</p>
+              </div>
+              <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-accent-500/20">
+                <p className="text-[9px] font-bold text-accent-500 uppercase tracking-widest">3-Dart Avg</p>
+                <p className="font-mono text-base font-black text-accent-400">{stat.threeDartAvg.toFixed(1)}</p>
+              </div>
+              <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-warning-500/20">
+                <p className="text-[9px] font-bold text-warning-500 uppercase tracking-widest">First 9 Avg</p>
+                <p className="font-mono text-base font-black text-warning-400">{stat.first9Avg.toFixed(1)}</p>
+              </div>
+            </div>
+          )}
+          
+          {variant === 'around_the_world' && (
+            <div className="grid grid-cols-1 gap-2">
+              <div className="bg-charcoal-900/50 rounded-lg p-2 text-center">
+                <p className="text-[9px] font-bold text-charcoal-500 uppercase tracking-widest">Darts Thrown</p>
+                <p className="font-mono text-base font-black text-charcoal-200">{stat.dartsThrown}</p>
+              </div>
+            </div>
+          )}
+          
+          {variant === 'killer' && (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-charcoal-900/50 rounded-lg p-2 text-center">
+                <p className="text-[9px] font-bold text-charcoal-500 uppercase tracking-widest">Darts Thrown</p>
+                <p className="font-mono text-base font-black text-charcoal-200">{stat.dartsThrown}</p>
+              </div>
+              <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-danger-500/20">
+                <p className="text-[9px] font-bold text-danger-500 uppercase tracking-widest">Lives</p>
+                <p className="font-mono text-base font-black text-danger-400">{stat.livesRemaining}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
   if (matchPlayers.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center">
@@ -484,61 +542,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
                   <Target size={48} className="text-emerald-500 mb-4" />
                   <h2 className="text-2xl font-black text-charcoal-50 mb-6">Match Complete</h2>
                   
-                  <div className="w-full space-y-4">
-                    {matchStats.map((stat, idx) => (
-                      <div key={stat.player.id} className="bg-charcoal-800 rounded-xl p-4 border border-charcoal-700 text-left">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-6 text-center font-mono font-black text-charcoal-500 text-sm">{idx + 1}</div>
-                          <Avatar name={stat.player.display_name} color={stat.player.avatar_color} size="sm" />
-                          <span className="font-bold text-charcoal-100 flex-1 truncate">{stat.player.display_name}</span>
-                          {stat.player.id === state.winner && (
-                            <span className="rounded-full bg-success-900/40 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-success-400 border border-success-500/20">
-                              Winner
-                            </span>
-                          )}
-                        </div>
-                        
-                        {variant === 'countdown' && (
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-charcoal-900/50 rounded-lg p-2 text-center">
-                              <p className="text-[9px] font-bold text-charcoal-500 uppercase tracking-widest">Darts</p>
-                              <p className="font-mono text-base font-black text-charcoal-200">{stat.dartsThrown}</p>
-                            </div>
-                            <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-accent-500/20">
-                              <p className="text-[9px] font-bold text-accent-500 uppercase tracking-widest">3-Dart Avg</p>
-                              <p className="font-mono text-base font-black text-accent-400">{stat.threeDartAvg.toFixed(1)}</p>
-                            </div>
-                            <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-warning-500/20">
-                              <p className="text-[9px] font-bold text-warning-500 uppercase tracking-widest">First 9 Avg</p>
-                              <p className="font-mono text-base font-black text-warning-400">{stat.first9Avg.toFixed(1)}</p>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {variant === 'around_the_world' && (
-                          <div className="grid grid-cols-1 gap-2">
-                            <div className="bg-charcoal-900/50 rounded-lg p-2 text-center">
-                              <p className="text-[9px] font-bold text-charcoal-500 uppercase tracking-widest">Darts Thrown</p>
-                              <p className="font-mono text-base font-black text-charcoal-200">{stat.dartsThrown}</p>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {variant === 'killer' && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-charcoal-900/50 rounded-lg p-2 text-center">
-                              <p className="text-[9px] font-bold text-charcoal-500 uppercase tracking-widest">Darts Thrown</p>
-                              <p className="font-mono text-base font-black text-charcoal-200">{stat.dartsThrown}</p>
-                            </div>
-                            <div className="bg-charcoal-900/50 rounded-lg p-2 text-center border border-danger-500/20">
-                              <p className="text-[9px] font-bold text-danger-500 uppercase tracking-widest">Lives</p>
-                              <p className="font-mono text-base font-black text-danger-400">{stat.livesRemaining}</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  {renderStatsGrid()}
                   
                   {!isSpectator && !isTvDisplayMode && (
                     <div className="w-full max-w-sm mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -615,6 +619,13 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
                           Undo
                         </span>
                       </button>
+                    </div>
+                  )}
+
+                  {(isSpectator || isTvDisplayMode) && (
+                    <div className="mt-8 border-t border-charcoal-700 pt-6">
+                      <h2 className="text-xl font-black text-charcoal-50 mb-4 text-center uppercase tracking-wide">Live Leaderboard</h2>
+                      {renderStatsGrid()}
                     </div>
                   )}
                 </>
