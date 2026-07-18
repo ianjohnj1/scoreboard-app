@@ -208,8 +208,10 @@ export default function LoginPage() {
           .single();
 
         if (error || !profile) {
+          await new Promise(resolve => setTimeout(resolve, 800));
           alert("Invalid username or PIN.");
         } else {
+          delete profile.pin_hash;
           await login(profile);
           navigate('/dashboard');
         }
@@ -240,6 +242,7 @@ export default function LoginPage() {
           value={username} 
           onChange={(e) => setUsername(e.target.value)}
           className="w-full p-3 mb-4 bg-charcoal-700 rounded text-charcoal-50"
+          maxLength={20}
           required
         />
 
@@ -250,6 +253,7 @@ export default function LoginPage() {
             value={displayName} 
             onChange={(e) => setDisplayName(e.target.value)}
             className="w-full p-3 mb-4 bg-charcoal-700 rounded text-charcoal-50 border border-green-500"
+            maxLength={20}
             required
           />
         )}

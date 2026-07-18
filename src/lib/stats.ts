@@ -1,5 +1,30 @@
 import { supabase } from './supabase';
 
+export const SEASON_POINT_RULES = {
+  placement: [
+    { rank: 1, label: '1st Place', points: 100 },
+    { rank: 2, label: '2nd Place', points: 50 },
+    { rank: 3, label: '3rd Place', points: 25 },
+    { rank: 4, label: 'Match Completion', points: 10 }
+  ],
+  milestones: {
+    cricket: [
+      { label: '50+ Runs Scored', points: 50 },
+      { label: '3+ Wickets Taken', points: 30 }
+    ],
+    golf: [
+      { label: 'Hole-in-One / Chip Off Ace', points: 50 }
+    ]
+  }
+};
+
+export function calculatePlacementSP(rank: number): number {
+  if (rank === 1) return SEASON_POINT_RULES.placement[0].points;
+  if (rank === 2) return SEASON_POINT_RULES.placement[1].points;
+  if (rank === 3) return SEASON_POINT_RULES.placement[2].points;
+  return SEASON_POINT_RULES.placement[3].points;
+}
+
 export interface MatchStats {
   profile_id: string;
   sport: string;
@@ -127,7 +152,7 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
         stats.push({
           profile_id: p.profile_id,
           sport: 'cricket',
-          is_winner: calculatedWinnerProfileId === p.profile_id || calculatedWinnerTeamId === p.team_id,
+          is_winner: calculatedWinnerProfileId === p.profile_id || (!!p.team_id && calculatedWinnerTeamId === p.team_id),
           score: finalStats.runs,
           extra_stats: { runs: finalStats.runs, wickets: finalStats.wickets, balls: finalStats.balls }
         });
@@ -418,7 +443,7 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
         stats.push({
           profile_id: p.profile_id,
           sport: match.sport,
-          is_winner: match.winner_profile_id === p.profile_id || match.winner_team_id === p.team_id,
+          is_winner: match.winner_profile_id === p.profile_id || (!!p.team_id && match.winner_team_id === p.team_id),
           score: score,
           extra_stats: s
         });
@@ -488,22 +513,19 @@ export async function updateCareerStats(matchId: string, retries = 3): Promise<v
     try {
       // 1. Calculate Placement Points
       const rank = sortedStats.findIndex(s => s.profile_id === stat.profile_id) + 1;
-      let placementSP = 10; // Completion Bonus
-      if (rank === 1) placementSP = 100;
-      else if (rank === 2) placementSP = 50;
-      else if (rank === 3) placementSP = 25;
+      const placementSP = calculatePlacementSP(rank);
 
       // 2. Calculate Milestones
       let milestoneSP = 0;
       if (stat.sport === 'chip_off') {
         const hioCount = (stat.extra_stats.tens as number) || 0;
-        milestoneSP += hioCount * 50;
+        milestoneSP += hioCount * SEASON_POINT_RULES.milestones.golf[0].points;
       } else if (stat.sport === 'cricket') {
-        if (stat.score >= 50) milestoneSP += 50;
-        if ((stat.extra_stats.wickets as number) >= 3) milestoneSP += 30;
+        if (stat.score >= 50) milestoneSP += SEASON_POINT_RULES.milestones.cricket[0].points;
+        if ((stat.extra_stats.wickets as number) >= 3) milestoneSP += SEASON_POINT_RULES.milestones.cricket[1].points;
       } else if (stat.sport === 'golf') {
         const hioCount = (stat.extra_stats.hio as number) || 0;
-        milestoneSP += hioCount * 50;
+        milestoneSP += hioCount * SEASON_POINT_RULES.milestones.golf[0].points;
       }
 
       const totalSP = placementSP + milestoneSP;
@@ -614,6 +636,8 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
         matches_lost: 0,
         total_score: 0,
         best_score: null,
+        best_score_classic: null,
+        best_score_chip_off: null,
         season_points: 0,
         cricket_lifetime_runs: 0,
         cricket_lifetime_wickets: 0,
@@ -634,6 +658,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
   for (const match of matches) {
     const matchPlayers = players?.filter(p => p.match_id === match.id) || [];
     const matchEvents = events?.filter(e => e.match_id === match.id) || [];
+    const isChipOff = match.sport === 'golf' && (match.house_rules as any)?.variant === 'chip_off';
     
     const playerMap = new Map<string, any>();
 
@@ -771,10 +796,10 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
         runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0 
       };
       
-      const isWinner = match.winner_profile_id === p.profile_id || match.winner_team_id === p.team_id;
+      const isWinner = match.winner_profile_id === p.profile_id || (!!p.team_id && match.winner_team_id === p.team_id);
       let score = s.points;
       if (match.sport === 'cricket') score = s.runs;
-      if (match.sport === 'golf') score = s.strokes;
+      if (match.sport === 'golf') score = isChipOff ? s.points : s.strokes;
 
       matchStatsList.push({
         profile_id: p.profile_id,
@@ -786,7 +811,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
 
     // 3.2 Determine placement points
     const sortedForPlacement = [...matchStatsList].sort((a, b) => {
-      if (match.sport === 'golf') return a.score - b.score;
+      if (match.sport === 'golf' && !isChipOff) return a.score - b.score; // Lower strokes is better for classic
       return b.score - a.score;
     });
 
@@ -796,19 +821,15 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
       
       // Calculate Season Points
       const rank = sortedForPlacement.findIndex(s => s.profile_id === ms.profile_id) + 1;
-      let placementSP = 10; // Completion Bonus
-      if (rank === 1) placementSP = 100;
-      else if (rank === 2) placementSP = 50;
-      else if (rank === 3) placementSP = 25;
+      const placementSP = calculatePlacementSP(rank);
 
       let milestoneSP = 0;
-      if (match.sport === 'chip_off') {
-        milestoneSP += (ms.extra.tens || 0) * 50;
-      } else if (match.sport === 'cricket') {
-        if (ms.score >= 50) milestoneSP += 50;
-        if ((ms.extra.wickets || 0) >= 3) milestoneSP += 30;
+      if (match.sport === 'cricket') {
+        if (ms.score >= 50) milestoneSP += SEASON_POINT_RULES.milestones.cricket[0].points;
+        if ((ms.extra.wickets || 0) >= 3) milestoneSP += SEASON_POINT_RULES.milestones.cricket[1].points;
       } else if (match.sport === 'golf') {
-        milestoneSP += (ms.extra.hio || 0) * 50;
+        const totalAces = (ms.extra.hio || 0) + (ms.extra.tens || 0);
+        milestoneSP += totalAces * SEASON_POINT_RULES.milestones.golf[0].points;
       }
 
       g.matches_played += 1;
@@ -821,23 +842,42 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
       if (match.sport === 'cricket') {
         g.cricket_lifetime_runs += ms.score;
         g.cricket_lifetime_wickets += (ms.extra.wickets || 0);
-      } else if (match.sport === 'chip_off') {
-        g.golf_lifetime_points += ms.score;
-        g.golf_lifetime_hio += (ms.extra.tens || 0);
-        g.chip_off_total_chips += (ms.extra.total_chips || 0);
-        g.chip_off_scoring_chips += (ms.extra.scoring_chips || 0);
       } else if (match.sport === 'golf') {
-        g.golf_lifetime_hio += (ms.extra.hio || 0);
+        if (isChipOff) {
+          g.golf_lifetime_points += ms.score;
+          g.golf_lifetime_hio += (ms.extra.tens || 0);
+          g.chip_off_total_chips += (ms.extra.total_chips || 0);
+          g.chip_off_scoring_chips += (ms.extra.scoring_chips || 0);
+        } else {
+          g.golf_lifetime_hio += (ms.extra.hio || 0);
+        }
       }
       
       // Update best score
       if (g.best_score === null) {
         g.best_score = ms.score;
       } else {
-        if (match.sport === 'golf') {
+        if (match.sport === 'golf' && !isChipOff) {
           if (ms.score > 0) g.best_score = Math.min(g.best_score, ms.score);
         } else {
           g.best_score = Math.max(g.best_score, ms.score);
+        }
+      }
+
+      // Update specific golf best scores
+      if (match.sport === 'golf') {
+        if (isChipOff) {
+          if (g.best_score_chip_off === null) {
+            g.best_score_chip_off = ms.score;
+          } else {
+            g.best_score_chip_off = Math.max(g.best_score_chip_off, ms.score);
+          }
+        } else {
+          if (g.best_score_classic === null) {
+            if (ms.score > 0) g.best_score_classic = ms.score;
+          } else {
+            if (ms.score > 0) g.best_score_classic = Math.min(g.best_score_classic, ms.score);
+          }
         }
       }
 

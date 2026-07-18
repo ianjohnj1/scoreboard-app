@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Trophy, Star, TrendingUp, RotateCcw, AlertCircle } from 'lucide-react';
+import { Trophy, Star, TrendingUp, RotateCcw, AlertCircle, Info, Target, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getSportLabel } from '../lib/matches';
-import { getGlobalLeaderboardData } from '../lib/stats';
+import { getGlobalLeaderboardData, SEASON_POINT_RULES } from '../lib/stats';
 import Avatar from '../components/Avatar';
 import ThemeToggle from '../components/ThemeToggle';
+import Modal from '../components/Modal';
 import type { Profile, PlayerCareerStats } from '../lib/supabase';
 
-type LeaderboardEntry = PlayerCareerStats & { profile: Profile; rankScore: number; best_sport?: string; chip_off_total_chips?: number; chip_off_scoring_chips?: number };
+type LeaderboardEntry = PlayerCareerStats & { profile: Profile; rankScore: number; best_sport?: string; chip_off_total_chips?: number; chip_off_scoring_chips?: number; best_score_classic?: number; best_score_chip_off?: number; };
 
 export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -16,6 +17,7 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showSPModal, setShowSPModal] = useState(false);
 
   const sports = ['all', 'cricket', 'golf', 'darts', 'table_tennis', 'pool', 'basketball', 'cards', 'custom'];
 
@@ -73,7 +75,7 @@ export default function LeaderboardPage() {
       // Sort based on selection
       processedData.sort((a, b) => {
         if (sport === 'all') return b.season_points - a.season_points;
-        if (sport === 'golf') return (a.best_score ?? 999) - (b.best_score ?? 999);
+        if (sport === 'golf') return b.season_points - a.season_points;
         if (sport === 'cricket') return (b.cricket_lifetime_runs || 0) - (a.cricket_lifetime_runs || 0);
         if (sport === 'chip_off') return (b.golf_lifetime_points || 0) - (a.golf_lifetime_points || 0);
         return b.season_points - a.season_points;
@@ -137,6 +139,12 @@ export default function LeaderboardPage() {
             <h1 className="text-xl font-bold text-charcoal-50">Leaderboards</h1>
           </div>
           <p className="text-charcoal-400 text-sm">Global rankings across all sports</p>
+          <button 
+            onClick={() => setShowSPModal(true)} 
+            className="text-accent-400 text-xs mt-1 hover:underline flex items-center gap-1 font-bold"
+          >
+            <Info size={12} /> How are Season Points calculated?
+          </button>
         </div>
         <ThemeToggle />
       </div>
@@ -199,14 +207,16 @@ export default function LeaderboardPage() {
                 <div className="flex flex-col items-center flex-1 max-w-[100px]">
                   <Link to={`/profile/${entries[1].profile_id}`} className="flex flex-col items-center group">
                     <div className="relative mb-2 transition-transform group-hover:scale-105">
-                      <Avatar name={entries[1].profile?.display_name || '?'} color={entries[1].profile?.avatar_color} size="lg" />
+                      <Avatar name={entries[1].profile?.display_name || '?'} color={entries[1].profile?.avatar_color} size="lg" url={entries[1].profile?.avatar_url} />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-charcoal-400 border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">2</div>
                     </div>
                     <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-charcoal-50">{entries[1].profile?.display_name}</p>
+                    {entries[1].profile?.catchphrase && (
+                      <p className="text-[10px] italic text-accent-400 truncate w-full text-center px-1">"{entries[1].profile.catchphrase}"</p>
+                    )}
                   </Link>
                   <p className="text-[10px] text-charcoal-400 font-mono">
-                    {sport === 'all' ? `${entries[1].season_points} SP` : 
-                     sport === 'golf' ? `${entries[1].best_score} Best` :
+                    {sport === 'all' || sport === 'golf' ? `${entries[1].season_points} SP` : 
                      sport === 'cricket' ? `${entries[1].cricket_lifetime_runs} Runs` :
                      `${entries[1].golf_lifetime_points} Pts`}
                   </p>
@@ -220,14 +230,16 @@ export default function LeaderboardPage() {
                       <div className="absolute -top-6 left-1/2 -translate-x-1/2">
                         <Trophy size={24} className="text-warning-400 drop-shadow-lg" />
                       </div>
-                      <Avatar name={entries[0].profile?.display_name || '?'} color={entries[0].profile?.avatar_color} size="xl" />
+                      <Avatar name={entries[0].profile?.display_name || '?'} color={entries[0].profile?.avatar_color} size="xl" url={entries[0].profile?.avatar_url} />
                       <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-warning-400 border-2 border-charcoal-900 flex items-center justify-center text-xs font-bold text-charcoal-900">1</div>
                     </div>
                     <p className="text-sm font-bold text-charcoal-50 truncate w-full text-center group-hover:text-charcoal-50">{entries[0].profile?.display_name}</p>
+                    {entries[0].profile?.catchphrase && (
+                      <p className="text-[10px] italic text-accent-400 truncate w-full text-center px-1">"{entries[0].profile.catchphrase}"</p>
+                    )}
                   </Link>
                   <p className="text-xs text-warning-400 font-bold font-mono">
-                    {sport === 'all' ? `${entries[0].season_points} SP` : 
-                     sport === 'golf' ? `${entries[0].best_score} Best` :
+                    {sport === 'all' || sport === 'golf' ? `${entries[0].season_points} SP` : 
                      sport === 'cricket' ? `${entries[0].cricket_lifetime_runs} Runs` :
                      `${entries[0].golf_lifetime_points} Pts`}
                   </p>
@@ -238,14 +250,16 @@ export default function LeaderboardPage() {
                 <div className="flex flex-col items-center flex-1 max-w-[100px]">
                   <Link to={`/profile/${entries[2].profile_id}`} className="flex flex-col items-center group">
                     <div className="relative mb-2 transition-transform group-hover:scale-105">
-                      <Avatar name={entries[2].profile?.display_name || '?'} color={entries[2].profile?.avatar_color} size="lg" />
+                      <Avatar name={entries[2].profile?.display_name || '?'} color={entries[2].profile?.avatar_color} size="lg" url={entries[2].profile?.avatar_url} />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cricket border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">3</div>
                     </div>
                     <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-charcoal-50">{entries[2].profile?.display_name}</p>
+                    {entries[2].profile?.catchphrase && (
+                      <p className="text-[10px] italic text-accent-400 truncate w-full text-center px-1">"{entries[2].profile.catchphrase}"</p>
+                    )}
                   </Link>
                   <p className="text-[10px] text-charcoal-400 font-mono">
-                    {sport === 'all' ? `${entries[2].season_points} SP` : 
-                     sport === 'golf' ? `${entries[2].best_score} Best` :
+                    {sport === 'all' || sport === 'golf' ? `${entries[2].season_points} SP` : 
                      sport === 'cricket' ? `${entries[2].cricket_lifetime_runs} Runs` :
                      `${entries[2].golf_lifetime_points} Pts`}
                   </p>
@@ -273,38 +287,26 @@ export default function LeaderboardPage() {
                   }
                   if (sport === 'golf') {
                     return (
-                      <div className="flex gap-4 text-xs font-mono">
-                        <div className="flex flex-col items-end">
-                          <span className="text-charcoal-500 uppercase text-[8px]">Best</span>
-                          <span className="text-success-400 font-bold">{entry.best_score || '-'}</span>
+                      <div className="flex gap-3 text-xs font-mono whitespace-nowrap overflow-x-auto no-scrollbar">
+                        <div className="flex flex-col items-end min-w-[36px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Played</span>
+                          <span className="text-charcoal-100 font-bold">{entry.matches_played || 0}</span>
                         </div>
-                        <div className="flex flex-col items-end">
+                        <div className="flex flex-col items-end min-w-[36px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Wins</span>
+                          <span className="text-success-400 font-bold">{entry.matches_won || 0}</span>
+                        </div>
+                        <div className="flex flex-col items-end min-w-[36px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Best (Classic)</span>
+                          <span className="text-success-400 font-bold">{entry.best_score_classic || '-'}</span>
+                        </div>
+                        <div className="flex flex-col items-end min-w-[36px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Best (Chip)</span>
+                          <span className="text-success-400 font-bold">{entry.best_score_chip_off || '-'}</span>
+                        </div>
+                        <div className="flex flex-col items-end min-w-[36px]">
                           <span className="text-charcoal-500 uppercase text-[8px]">HIO</span>
                           <span className="text-warning-400 font-bold">{entry.golf_lifetime_hio || 0}</span>
-                        </div>
-                      </div>
-                    );
-                  }
-                  if (sport === 'chip_off') {
-                    const totalChips = entry.chip_off_total_chips || 0;
-                    const scoringChips = entry.chip_off_scoring_chips || 0;
-                    const efficiency = totalChips > 0 ? Math.round((entry.golf_lifetime_points / (totalChips * 10)) * 100) : 0;
-                    const aceFreq = totalChips > 0 ? Math.round((entry.golf_lifetime_hio / totalChips) * 100) : 0;
-                    const hazardAvoid = totalChips > 0 ? Math.round((scoringChips / totalChips) * 100) : 0;
-
-                    return (
-                      <div className="flex gap-4 text-xs font-mono">
-                        <div className="flex flex-col items-end">
-                          <span className="text-emerald-500 uppercase text-[8px]">Eff %</span>
-                          <span className="text-charcoal-100 font-bold">{efficiency}%</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-warning-400 uppercase text-[8px]">Aces</span>
-                          <span className="text-charcoal-100 font-bold">{entry.golf_lifetime_hio || 0}</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-blue-400 uppercase text-[8px]">Avoid</span>
-                          <span className="text-charcoal-100 font-bold">{hazardAvoid}%</span>
                         </div>
                       </div>
                     );
@@ -332,13 +334,16 @@ export default function LeaderboardPage() {
                       {rank + 1}
                     </div>
                     <Link to={`/profile/${entry.profile_id}`} className="flex flex-1 items-center gap-3 min-w-0 group">
-                      <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" className="group-hover:scale-105 transition-transform" />
+                      <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" url={entry.profile?.avatar_url} className="group-hover:scale-105 transition-transform" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-charcoal-100 font-semibold text-sm truncate group-hover:text-charcoal-50">{entry.profile?.display_name}</p>
                           {entry.profile?.is_guest && <span className="pill-guest text-[10px] px-1.5 py-0.5">Guest</span>}
                         </div>
-                        <div className="flex items-center gap-2">
+                        {entry.profile?.catchphrase && (
+                          <p className="text-accent-400 text-[10px] italic truncate mt-0.5">"{entry.profile.catchphrase}"</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-0.5">
                           <p className="text-charcoal-500 text-[10px] uppercase tracking-wider">
                             {sport === 'all' && entry.best_sport
                               ? `Best Sport: ${getSportLabel(entry.best_sport)}`
@@ -355,6 +360,63 @@ export default function LeaderboardPage() {
           </div>
         )}
       </div>
+
+      <Modal isOpen={showSPModal} onClose={() => setShowSPModal(false)} title="Season Points (SP)">
+        <div className="space-y-6">
+          <p className="text-charcoal-300 text-sm leading-relaxed">
+            Season Points determine your rank on the Global MVP leaderboard. You earn them by completing matches and hitting milestones.
+          </p>
+
+          <div>
+            <h3 className="text-charcoal-50 font-black uppercase tracking-widest text-xs mb-3 flex items-center gap-2">
+              <Trophy size={14} className="text-warning-400" /> Match Placements
+            </h3>
+            <div className="space-y-2">
+              {SEASON_POINT_RULES.placement.map((rule, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-charcoal-800 p-3 rounded-xl border border-charcoal-700">
+                  <span className="text-charcoal-200 text-sm font-semibold">{rule.label}</span>
+                  <span className="text-warning-400 font-black font-mono">+{rule.points} SP</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-charcoal-50 font-black uppercase tracking-widest text-xs mb-3 flex items-center gap-2">
+              <Activity size={14} className="text-cricket" /> Cricket Milestones
+            </h3>
+            <div className="space-y-2">
+              {SEASON_POINT_RULES.milestones.cricket.map((rule, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-charcoal-800 p-3 rounded-xl border border-charcoal-700">
+                  <span className="text-charcoal-200 text-sm font-semibold">{rule.label}</span>
+                  <span className="text-cricket font-black font-mono">+{rule.points} SP</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-charcoal-50 font-black uppercase tracking-widest text-xs mb-3 flex items-center gap-2">
+              <Target size={14} className="text-success-400" /> Golf Milestones
+            </h3>
+            <div className="space-y-2">
+              {SEASON_POINT_RULES.milestones.golf.map((rule, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-charcoal-800 p-3 rounded-xl border border-charcoal-700">
+                  <span className="text-charcoal-200 text-sm font-semibold">{rule.label}</span>
+                  <span className="text-success-400 font-black font-mono">+{rule.points} SP</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowSPModal(false)}
+            className="w-full py-3 bg-accent-600 hover:bg-accent-500 text-charcoal-50 font-black rounded-xl shadow-lg shadow-accent-900/40 transition-all uppercase tracking-widest text-sm"
+          >
+            Got it
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

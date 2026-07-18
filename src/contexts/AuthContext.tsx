@@ -96,8 +96,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [initializeAuth]);
 
   const login = useCallback(async (profile: Profile) => {
-    setCurrentUser(profile);
-    localStorage.setItem('sk_user', JSON.stringify(profile));
+    // Ensure sensitive data is not saved to localStorage
+    const safeProfile = { ...profile };
+    delete (safeProfile as any).pin_hash;
+
+    setCurrentUser(safeProfile);
+    localStorage.setItem('sk_user', JSON.stringify(safeProfile));
 
     // Create/update active session
     const { data: existing } = await supabase
