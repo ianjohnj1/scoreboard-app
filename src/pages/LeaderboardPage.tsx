@@ -273,7 +273,7 @@ export default function LeaderboardPage() {
                 const renderStats = () => {
                   if (sport === 'cricket') {
                     return (
-                      <div className="flex gap-4 text-xs font-mono">
+                      <div className="flex gap-4 text-xs font-mono ml-auto flex-shrink-0">
                         <div className="flex flex-col items-end">
                           <span className="text-charcoal-500 uppercase text-[8px]">Runs</span>
                           <span className="text-charcoal-100 font-bold">{entry.cricket_lifetime_runs || 0}</span>
@@ -287,24 +287,24 @@ export default function LeaderboardPage() {
                   }
                   if (sport === 'golf') {
                     return (
-                      <div className="flex gap-3 text-xs font-mono whitespace-nowrap overflow-x-auto no-scrollbar">
-                        <div className="flex flex-col items-end min-w-[36px]">
+                      <div className="flex gap-4 text-xs font-mono whitespace-nowrap overflow-x-auto no-scrollbar ml-auto w-full sm:w-auto justify-between sm:justify-end pt-3 sm:pt-0 border-t border-charcoal-700/50 sm:border-0 mt-1 sm:mt-0">
+                        <div className="flex flex-col items-end min-w-[40px]">
                           <span className="text-charcoal-500 uppercase text-[8px]">Played</span>
                           <span className="text-charcoal-100 font-bold">{entry.matches_played || 0}</span>
                         </div>
-                        <div className="flex flex-col items-end min-w-[36px]">
+                        <div className="flex flex-col items-end min-w-[40px]">
                           <span className="text-charcoal-500 uppercase text-[8px]">Wins</span>
                           <span className="text-success-400 font-bold">{entry.matches_won || 0}</span>
                         </div>
-                        <div className="flex flex-col items-end min-w-[36px]">
-                          <span className="text-charcoal-500 uppercase text-[8px]">Best (Classic)</span>
+                        <div className="flex flex-col items-end min-w-[40px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Best(C)</span>
                           <span className="text-success-400 font-bold">{entry.best_score_classic || '-'}</span>
                         </div>
-                        <div className="flex flex-col items-end min-w-[36px]">
-                          <span className="text-charcoal-500 uppercase text-[8px]">Best (Chip)</span>
+                        <div className="flex flex-col items-end min-w-[40px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Best(Ch)</span>
                           <span className="text-success-400 font-bold">{entry.best_score_chip_off || '-'}</span>
                         </div>
-                        <div className="flex flex-col items-end min-w-[36px]">
+                        <div className="flex flex-col items-end min-w-[40px]">
                           <span className="text-charcoal-500 uppercase text-[8px]">HIO</span>
                           <span className="text-warning-400 font-bold">{entry.golf_lifetime_hio || 0}</span>
                         </div>
@@ -312,7 +312,7 @@ export default function LeaderboardPage() {
                     );
                   }
                   return (
-                    <div className="text-right flex-shrink-0">
+                    <div className="text-right flex-shrink-0 ml-auto">
                       <p className="text-warning-400 font-bold font-mono text-sm">{entry.season_points} SP</p>
                       <p className="text-charcoal-400 text-[10px] font-mono">{entry.matches_won}W • {entry.matches_played}G</p>
                     </div>
@@ -320,38 +320,40 @@ export default function LeaderboardPage() {
                 };
 
                 return (
-                  <div key={entry.id} className={`card p-3 flex items-center gap-3 ${
+                  <div key={entry.id} className={`card p-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-y-3 gap-x-3 ${
                     rank === 0 ? 'border-warning-500/40 bg-warning-500/5' :
                     rank === 1 ? 'border-charcoal-400/40' :
                     rank === 2 ? 'border-cricket/30' : ''
                   }`}>
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 ${
-                      rank === 0 ? 'bg-warning-500/20 text-warning-400' :
-                      rank === 1 ? 'bg-charcoal-600/50 text-charcoal-300' :
-                      rank === 2 ? 'bg-cricket/20 text-cricket' :
-                      'bg-charcoal-700 text-charcoal-400'
-                    }`}>
-                      {rank + 1}
-                    </div>
-                    <Link to={`/profile/${entry.profile_id}`} className="flex flex-1 items-center gap-3 min-w-0 group">
-                      <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" url={entry.profile?.avatar_url} className="group-hover:scale-105 transition-transform" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-charcoal-100 font-semibold text-sm truncate group-hover:text-charcoal-50">{entry.profile?.display_name}</p>
-                          {entry.profile?.is_guest && <span className="pill-guest text-[10px] px-1.5 py-0.5">Guest</span>}
-                        </div>
-                        {entry.profile?.catchphrase && (
-                          <p className="text-accent-400 text-[10px] italic truncate mt-0.5">"{entry.profile.catchphrase}"</p>
-                        )}
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-charcoal-500 text-[10px] uppercase tracking-wider">
-                            {sport === 'all' && entry.best_sport
-                              ? `Best Sport: ${getSportLabel(entry.best_sport)}`
-                              : getSportLabel(entry.sport)}
-                          </p>
-                        </div>
+                    <div className="flex items-center gap-3 flex-1 min-w-[180px]">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 ${
+                        rank === 0 ? 'bg-warning-500/20 text-warning-400' :
+                        rank === 1 ? 'bg-charcoal-600/50 text-charcoal-300' :
+                        rank === 2 ? 'bg-cricket/20 text-cricket' :
+                        'bg-charcoal-700 text-charcoal-400'
+                      }`}>
+                        {rank + 1}
                       </div>
-                    </Link>
+                      <Link to={`/profile/${entry.profile_id}`} className="flex flex-1 items-center gap-3 min-w-0 group">
+                        <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" url={entry.profile?.avatar_url} className="group-hover:scale-105 transition-transform flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="text-charcoal-100 font-semibold text-sm truncate group-hover:text-charcoal-50">{entry.profile?.display_name}</p>
+                            {entry.profile?.is_guest && <span className="pill-guest text-[10px] px-1.5 py-0.5 flex-shrink-0">Guest</span>}
+                          </div>
+                          {entry.profile?.catchphrase && (
+                            <p className="text-accent-400 text-[10px] italic truncate mt-0.5">"{entry.profile.catchphrase}"</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                            <p className="text-charcoal-500 text-[10px] uppercase tracking-wider truncate">
+                              {sport === 'all' && entry.best_sport
+                                ? `Best Sport: ${getSportLabel(entry.best_sport)}`
+                                : getSportLabel(entry.sport)}
+                            </p>
+                          </div>
+                        </div>
+                      </Link>
+                    </div>
                     {renderStats()}
                   </div>
                 );
