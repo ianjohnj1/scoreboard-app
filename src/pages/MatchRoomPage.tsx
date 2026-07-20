@@ -5,9 +5,9 @@ import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getS
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { getAllProfiles } from '../lib/auth';
-import Avatar from '../components/Avatar';
 import Modal from '../components/Modal';
 import QRCodeModal from '../components/QRCodeModal';
+import UserAvatar from '../components/UserAvatar';
 import CricketRoom from '../components/sports/CricketRoom';
 import GolfRoom from '../components/sports/GolfRoom';
 import ChipOffRoom from '../components/sports/ChipOffRoom';
@@ -346,7 +346,7 @@ export default function MatchRoomPage() {
         <div className="flex items-center gap-2 mt-2 overflow-x-auto no-scrollbar">
           {Array.from(profiles.values()).map(p => (
             <div key={p.id} className="flex items-center gap-1.5 flex-shrink-0">
-              <Avatar name={p.display_name} color={p.avatar_color} size="xs" />
+              <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="xs" />
               <span className="text-charcoal-300 text-xs">{p.display_name}</span>
             </div>
           ))}
@@ -408,7 +408,7 @@ export default function MatchRoomPage() {
                 if (!profile) return null;
                 return (
                   <div key={p.profile_id} className="flex items-center gap-1.5 bg-charcoal-800 rounded-full pl-1 pr-2 py-1 border border-charcoal-700">
-                    <Avatar name={profile.display_name} color={profile.avatar_color} size="xs" />
+                    <UserAvatar display_name={profile.display_name} avatar_color={profile.avatar_color} avatar_url={profile.avatar_url} size="xs" />
                     <span className="text-charcoal-200 text-xs font-medium">{profile.display_name}</span>
                     {team && (
                       <span className="text-[9px] uppercase tracking-wider font-bold opacity-60 ml-1" style={{ color: team.team_color }}>
@@ -476,7 +476,7 @@ export default function MatchRoomPage() {
                     onClick={() => handleAddPlayer(p.id)}
                     className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-charcoal-800 transition-colors text-left"
                   >
-                    <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                    <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="sm" />
                     <span className="text-charcoal-200 text-sm font-medium">{p.display_name}</span>
                     <Plus size={14} className="ml-auto text-charcoal-500" />
                   </button>

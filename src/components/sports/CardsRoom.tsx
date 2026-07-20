@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { recordEvent } from '../../lib/matches';
-import Avatar from '../Avatar';
+import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
 
@@ -65,7 +65,7 @@ export default function CardsRoom({ ctx }: { ctx: MatchContext }) {
             <div className="space-y-2">
               {matchPlayers.map(p => (
                 <div key={p.id} className="flex items-center gap-3">
-                  <Avatar name={p.display_name} color={p.avatar_color} size="xs" />
+                  <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="xs" />
                   <span className="text-charcoal-200 text-sm flex-1">{p.display_name}</span>
                   <input
                     type="number"

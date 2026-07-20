@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { recordEvent, undoLastEvent, completeMatchWithWinner } from '../../lib/matches';
-import Avatar from '../Avatar';
+import UserAvatar from '../UserAvatar';
 import Modal from '../Modal';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
@@ -308,7 +308,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
           <div className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-500 ${
             isMyTurn ? 'bg-emerald-950/20 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]' : 'bg-charcoal-800/50 border-charcoal-700'
           }`}>
-            <Avatar name={currentPlayer.display_name} color={currentPlayer.avatar_color} size="md" />
+            <UserAvatar display_name={currentPlayer.display_name} avatar_color={currentPlayer.avatar_color} avatar_url={currentPlayer.avatar_url} size="md" />
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Active Player</p>
               <h3 className="text-xl font-black text-charcoal-50 truncate uppercase tracking-tight">
@@ -340,7 +340,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
                   <div key={p.id} className="bg-charcoal-800 rounded-xl p-4 border border-charcoal-700 text-left">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-6 text-center font-mono font-black text-charcoal-500 text-sm">{idx + 1}</div>
-                      <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                      <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="sm" />
                       <span className="font-bold text-charcoal-100 flex-1 truncate">{p.display_name}</span>
                       <span className="font-mono text-xl font-black text-charcoal-50">{stat.totalPoints} <span className="text-[10px] uppercase text-charcoal-500">pts</span></span>
                     </div>
@@ -481,7 +481,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
                   <div className="w-6 text-center font-mono font-black text-charcoal-500 text-sm">
                     {idx + 1}
                   </div>
-                  <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                  <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-charcoal-50 truncate uppercase tracking-tight">{p.display_name}</p>
                     {isFirst && <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest leading-none mt-0.5">Leader</p>}

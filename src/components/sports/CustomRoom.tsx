@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { recordEvent } from '../../lib/matches';
-import Avatar from '../Avatar';
+import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
 
@@ -60,7 +60,7 @@ export default function CustomRoom({ ctx }: { ctx: MatchContext }) {
             <span className="text-charcoal-500 font-mono font-bold w-5">{rank + 1}</span>
             {!isTeamMatch && (() => {
               const p = profiles.get(entity.id);
-              return p ? <Avatar name={p.display_name} color={p.avatar_color} size="sm" /> : null;
+              return p ? <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="sm" /> : null;
             })()}
             <div className="flex-1">
               <p className="text-charcoal-100 font-semibold">{entity.name}</p>

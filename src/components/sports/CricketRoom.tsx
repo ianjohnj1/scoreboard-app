@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { recordEvent, undoLastEvent, completeMatchWithWinner, completeMatchWithTeamWinner } from '../../lib/matches';
 import Modal from '../Modal';
-import Avatar from '../Avatar';
+import UserAvatar from '../UserAvatar';
 import { Trophy, RotateCcw, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
@@ -888,7 +888,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                     : 'bg-charcoal-900/40 border border-charcoal-800/50 hover:bg-charcoal-800/20'
                 } ${stat?.bat_dismissed ? 'opacity-40 grayscale' : ''}`}>
                   <div className="relative">
-                    <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                    <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="sm" />
                     {isAtCrease && (
                       <div className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-charcoal-800 ${isStriker ? 'bg-cricket animate-pulse' : 'bg-charcoal-400'}`} />
                     )}
@@ -972,7 +972,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                       ? 'bg-charcoal-800 border-l-4 border-success-500 shadow-[0_4px_20px_rgba(34,197,94,0.1)]' 
                       : 'bg-charcoal-900/40 border border-charcoal-800/50 hover:bg-charcoal-800/20'
                   }`}>
-                    <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                    <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="sm" />
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -1093,9 +1093,10 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
       {/* Next Batter Modal (Backyard Mode) */}
       <Modal isOpen={showNextBatterModal} onClose={() => setShowNextBatterModal(false)} title="Next Batter">
         <div className="flex flex-col items-center justify-center p-6 space-y-4">
-          <Avatar 
-            name={profiles.get(nextBatterProfileId || '')?.display_name || ''} 
-            color={profiles.get(nextBatterProfileId || '')?.avatar_color || '#ccc'} 
+          <UserAvatar 
+            display_name={profiles.get(nextBatterProfileId || '')?.display_name || ''} 
+            avatar_color={profiles.get(nextBatterProfileId || '')?.avatar_color || '#ccc'} 
+            avatar_url={profiles.get(nextBatterProfileId || '')?.avatar_url || null}
             size="lg" 
           />
           <h2 className="text-2xl font-black text-charcoal-50">
@@ -1208,7 +1209,12 @@ function ActivePlayerOverlay({
     <div className={`relative flex items-center justify-between px-4 py-3 border-r border-charcoal-800/50 transition-all ${isFacing ? 'bg-cricket/5' : 'bg-transparent hover:bg-charcoal-800/30'}`}>
       <div className="flex items-center gap-3 min-w-0">
         <div className="relative">
-          <Avatar name={profile?.display_name || '?'} color={profile?.avatar_color || 'bg-charcoal-700'} size="sm" />
+          <UserAvatar
+            display_name={profile?.display_name || '?'}
+            avatar_color={profile?.avatar_color || 'bg-charcoal-700'}
+            avatar_url={profile?.avatar_url || null}
+            size="sm"
+          />
           {isFacing && (
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-cricket rounded-full border-2 border-charcoal-900 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
           )}

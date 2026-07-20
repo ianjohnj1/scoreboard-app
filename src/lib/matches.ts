@@ -174,7 +174,7 @@ export async function getLiveActivity(): Promise<any[]> {
     .from('match_rooms')
     .select(`
       *,
-      created_by_profile:profiles!match_rooms_created_by_fkey(display_name, avatar_color)
+      created_by_profile:profiles!match_rooms_created_by_fkey(display_name, avatar_color, avatar_url)
     `)
     .eq('status', 'active')
     .order('created_at', { ascending: false })

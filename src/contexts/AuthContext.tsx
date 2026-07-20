@@ -16,6 +16,7 @@ type AuthContextType = {
   login: (profile: Profile) => Promise<void>;
   logout: () => Promise<void>;
   retryConnection: () => Promise<void>;
+  syncCurrentUser: (profile: Profile) => void;
   isAdmin: boolean;
 };
 
@@ -26,6 +27,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
+
+  const sanitizeProfile = useCallback((profile: Profile) => {
+    const safeProfile = { ...profile };
+    delete (safeProfile as any).pin_hash;
+    return safeProfile;
+  }, []);
+
+  const syncCurrentUser = useCallback((profile: Profile) => {
+    const safeProfile = sanitizeProfile(profile);
+    setCurrentUser(safeProfile);
+    localStorage.setItem('sk_user', JSON.stringify(safeProfile));
+  }, [sanitizeProfile]);
 
   const initializeAuth = useCallback(async () => {
     setLoading(true);
@@ -45,8 +58,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedSession = localStorage.getItem('sk_session_id');
 
       if (storedUser) {
-        const profile = JSON.parse(storedUser);
+        const storedProfile = JSON.parse(storedUser) as Profile;
+        let profile = sanitizeProfile(storedProfile);
+
+        if (storedProfile.id) {
+          const { data: latestProfile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', storedProfile.id)
+            .single();
+
+          if (!profileError && latestProfile) {
+            profile = sanitizeProfile(latestProfile);
+          }
+        }
+
         setCurrentUser(profile);
+        localStorage.setItem('sk_user', JSON.stringify(profile));
         
         if (profile.id) {
           const { data: session } = await supabase
@@ -84,7 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sanitizeProfile]);
 
   // Load from localStorage on mount and ensure session exists
   useEffect(() => {
@@ -96,12 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [initializeAuth]);
 
   const login = useCallback(async (profile: Profile) => {
-    // Ensure sensitive data is not saved to localStorage
-    const safeProfile = { ...profile };
-    delete (safeProfile as any).pin_hash;
-
-    setCurrentUser(safeProfile);
-    localStorage.setItem('sk_user', JSON.stringify(safeProfile));
+    syncCurrentUser(profile);
 
     // Create/update active session
     const { data: existing } = await supabase
@@ -133,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('sk_session_id', data.id);
       }
     }
-  }, []);
+  }, [syncCurrentUser]);
 
   const logout = useCallback(async () => {
     if (sessionId) {
@@ -171,6 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         retryConnection,
+        syncCurrentUser,
         isAdmin: currentUser?.is_admin ?? false,
       }}
     >

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { recordEvent } from '../../lib/matches';
-import Avatar from '../Avatar';
+import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
 
@@ -58,6 +58,14 @@ export default function TableTennisRoom({ ctx }: { ctx: MatchContext }) {
             style={{ backgroundColor: `${getColor(idx === 0 ? p0 : p1, idx)}15` }}
             disabled={isSpectator || isTvDisplayMode}
           >
+            {!isTeam && (idx === 0 ? p0 : p1) && (
+              <UserAvatar
+                display_name={(idx === 0 ? p0 : p1)?.display_name}
+                avatar_color={(idx === 0 ? p0 : p1)?.avatar_color}
+                avatar_url={(idx === 0 ? p0 : p1)?.avatar_url}
+                size="md"
+              />
+            )}
             <div className="font-black text-8xl font-mono" style={{ color: getColor(idx === 0 ? p0 : p1, idx) }}>
               {state.scores[idx]}
             </div>

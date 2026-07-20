@@ -11,6 +11,7 @@ import PoolRoom from '../components/sports/PoolRoom';
 import BasketballRoom from '../components/sports/BasketballRoom';
 import CardsRoom from '../components/sports/CardsRoom';
 import CustomRoom from '../components/sports/CustomRoom';
+import UserAvatar from '../components/UserAvatar';
 import type { MatchRoom, MatchTeam, MatchPlayer, Profile } from '../lib/supabase';
 import type { MatchContext } from './MatchRoomPage';
 
@@ -110,11 +111,16 @@ export default function SpectatorPage() {
     onRefresh: loadData,
   };
 
+  const participantProfiles = players
+    .map(player => profiles.get(player.profile_id))
+    .filter(Boolean) as Profile[];
+
   return (
     <div className="min-h-screen bg-charcoal-900 flex flex-col">
       {/* Spectator header */}
       <div className="bg-charcoal-800 border-b border-charcoal-700 px-6 py-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto space-y-4">
+          <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3">
               <span className="text-2xl">{getSportIcon(match.sport)}</span>
@@ -134,6 +140,24 @@ export default function SpectatorPage() {
             <p className="text-charcoal-500 text-xs">Spectator View</p>
             <p className="text-charcoal-400 text-xs">{new Date(match.started_at || match.created_at).toLocaleDateString()}</p>
           </div>
+        </div>
+          {participantProfiles.length > 0 && (
+            <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">
+              {participantProfiles.map(profile => (
+                <div key={profile.id} className="flex items-center gap-2 flex-shrink-0 rounded-full border border-charcoal-700 bg-charcoal-900/40 px-3 py-1.5">
+                  <UserAvatar
+                    display_name={profile.display_name}
+                    avatar_color={profile.avatar_color}
+                    avatar_url={profile.avatar_url}
+                    size="xs"
+                  />
+                  <span className="text-xs font-bold text-charcoal-200 uppercase tracking-wide">
+                    {profile.display_name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

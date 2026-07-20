@@ -15,7 +15,7 @@ import type { Profile, PlayerCareerAnalytics } from '../lib/supabase';
 export default function ProfilePage() {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const { currentUser, logout, isAdmin: isCurrentUserAdmin } = useAuth();
+  const { currentUser, logout, isAdmin: isCurrentUserAdmin, syncCurrentUser } = useAuth();
   const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<PlayerCareerAnalytics[]>([]);
   const [tab, setTab] = useState<'individual' | 'team'>('individual');
@@ -88,16 +88,22 @@ export default function ProfilePage() {
   const handleUpdateSettings = async () => {
     if (!currentUser || !isOwnProfile) return;
     try {
-      const { error } = await supabase
+      const { data: updatedProfile, error } = await supabase
         .from('profiles')
         .update({
           display_name: settingsForm.displayName,
           catchphrase: settingsForm.catchphrase,
           updated_at: new Date().toISOString()
         })
-        .eq('id', currentUser.id);
+        .eq('id', currentUser.id)
+        .select('*')
+        .single();
       
       if (error) throw error;
+      if (updatedProfile) {
+        syncCurrentUser(updatedProfile);
+        setTargetProfile(updatedProfile);
+      }
       setShowSettingsModal(false);
     } catch (err) {
       console.error("Error updating profile:", err);
@@ -139,12 +145,18 @@ export default function ProfilePage() {
         .from('avatars')
         .getPublicUrl(filePath);
 
-      const { error: updateError } = await supabase
+      const { data: updatedProfile, error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
-        .eq('id', currentUser.id);
+        .eq('id', currentUser.id)
+        .select('*')
+        .single();
 
       if (updateError) throw updateError;
+      if (updatedProfile) {
+        syncCurrentUser(updatedProfile);
+        setTargetProfile(updatedProfile);
+      }
     } catch (err: any) {
       console.error("Error uploading avatar:", err);
       alert(`Failed to upload avatar: ${err.message || 'Please check your connection and try again.'}`);

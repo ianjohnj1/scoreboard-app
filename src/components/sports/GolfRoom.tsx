@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { recordEvent } from '../../lib/matches';
-import Avatar from '../Avatar';
+import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { GolfHole, GolfScore, Profile } from '../../lib/supabase';
 
@@ -230,7 +230,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
             const { total, toPar } = getPlayerTotal(p.id);
             return (
               <div key={p.id} className="flex items-center gap-2 flex-shrink-0">
-                <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="sm" />
                 <div>
                   <p className="text-charcoal-100 text-sm font-semibold">{p.display_name}</p>
                   <p className="font-mono text-xs">
@@ -305,7 +305,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                 {matchPlayers.map(p => (
                   <th key={p.id} className="px-2 py-3 text-charcoal-100 font-bold uppercase tracking-wider border-b border-charcoal-700 min-w-[4.5rem]">
                     <div className="flex flex-col items-center gap-1">
-                      <Avatar name={p.display_name} color={p.avatar_color} size="xs" />
+                      <UserAvatar display_name={p.display_name} avatar_color={p.avatar_color} avatar_url={p.avatar_url} size="xs" />
                       <span className="truncate max-w-[60px]">{p.display_name.split(' ')[0]}</span>
                     </div>
                   </th>
@@ -399,7 +399,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
           <div className="w-full bg-charcoal-800 rounded-t-3xl border-t border-charcoal-700 p-6 safe-bottom shadow-2xl">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <Avatar name={selectedPlayer.display_name} color={selectedPlayer.avatar_color} size="md" />
+                <UserAvatar display_name={selectedPlayer.display_name} avatar_color={selectedPlayer.avatar_color} avatar_url={selectedPlayer.avatar_url} size="md" />
                 <div>
                   <h3 className="font-black text-charcoal-50 text-lg uppercase tracking-tight">
                     {selectedHole.title || `Hole ${selectedHole.hole_number}`}

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Heart, RotateCcw, Target, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DartsBoard from './DartsBoard';
-import Avatar from '../Avatar';
+import UserAvatar from '../UserAvatar';
 import { completeMatchWithWinner, recordEvent, undoLastEvent } from '../../lib/matches';
 import { supabase } from '../../lib/supabase';
 import { createThrow, getSegmentKey } from '../../lib/darts/board';
@@ -350,7 +350,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
         <div key={stat.player.id} className="bg-charcoal-800 rounded-xl p-4 border border-charcoal-700 text-left">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-6 text-center font-mono font-black text-charcoal-500 text-sm">{idx + 1}</div>
-            <Avatar name={stat.player.display_name} color={stat.player.avatar_color} size="sm" />
+            <UserAvatar display_name={stat.player.display_name} avatar_color={stat.player.avatar_color} avatar_url={stat.player.avatar_url} size="sm" />
             <span className="font-bold text-charcoal-100 flex-1 truncate">{stat.player.display_name}</span>
             {stat.player.id === state.winner && (
               <span className="rounded-full bg-success-900/40 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-success-400 border border-success-500/20">
@@ -431,7 +431,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Avatar name={player.display_name} color={player.avatar_color} size="sm" />
+                  <UserAvatar display_name={player.display_name} avatar_color={player.avatar_color} avatar_url={player.avatar_url} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-bold text-charcoal-50">{player.display_name}</p>
