@@ -4,7 +4,7 @@ import {
   Plus, Trophy, Activity, Clock, ChevronRight,
   QrCode, Zap, Crown, BarChart2, Trash2, RotateCcw
 } from 'lucide-react';
-import Avatar from '../components/Avatar';
+import UserAvatar from '../components/UserAvatar';
 import ThemeToggle from '../components/ThemeToggle';
 import QRCodeModal from '../components/QRCodeModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -94,7 +94,6 @@ export default function Dashboard() {
   if (!currentUser) return null;
 
   const displayName = currentUser?.display_name || 'Player';
-  const avatarColor = currentUser?.avatar_color || 'bg-charcoal-700';
 
   return (
     <div className="min-h-screen bg-charcoal-900 pb-24 text-charcoal-50">
@@ -107,7 +106,12 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-4">
             <ThemeToggle />
-            <Avatar name={displayName} color={avatarColor} size="md" />
+            <UserAvatar
+              display_name={displayName}
+              avatar_color={currentUser?.avatar_color}
+              avatar_url={currentUser?.avatar_url}
+              size="md"
+            />
           </div>
         </div>
       </div>
@@ -172,7 +176,12 @@ export default function Dashboard() {
                       <span className="text-xs text-charcoal-400 truncate">{stat.label}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Avatar name={stat.player.display_name} color={stat.player.avatar_color} size="sm" />
+                      <UserAvatar
+                        display_name={stat.player.display_name}
+                        avatar_color={stat.player.avatar_color}
+                        avatar_url={stat.player.avatar_url}
+                        size="sm"
+                      />
                       <div>
                         <p className="text-charcoal-100 font-semibold text-sm leading-tight truncate max-w-[80px]">
                           {stat.player.display_name}
@@ -203,7 +212,12 @@ export default function Dashboard() {
               return (
                 <div key={session.id} className="bg-charcoal-800 border border-charcoal-700 rounded-xl p-3 flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <Avatar name={profile.display_name || 'Player'} color={profile.avatar_color || 'bg-charcoal-700'} size="sm" />
+                    <UserAvatar
+                      display_name={profile.display_name || 'Player'}
+                      avatar_color={profile.avatar_color}
+                      avatar_url={profile.avatar_url}
+                      size="sm"
+                    />
                     <div className="min-w-0">
                       <p className="text-charcoal-100 font-semibold text-sm">
                         <span className="text-emerald-400">{profile.display_name || 'Player'}</span> is hosting{' '}

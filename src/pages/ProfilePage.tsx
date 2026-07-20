@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   User, LogOut, Settings, Star, BarChart2, Users,
-  Link as LinkIcon, Shield, Edit3, Check, ArrowLeft, ArrowRightLeft
+  Link as LinkIcon, Shield, Edit3, Check, ArrowLeft, ArrowRightLeft, Info, ChevronRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { linkGuestAccount, getAllProfiles } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
-import Avatar from '../components/Avatar';
+import UserAvatar from '../components/UserAvatar';
 import Modal from '../components/Modal';
 import ThemeToggle from '../components/ThemeToggle';
 import type { Profile, PlayerCareerAnalytics } from '../lib/supabase';
@@ -245,8 +245,8 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-charcoal-900 pb-24">
       <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-6 safe-top">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-4 min-w-0">
             {!isOwnProfile && (
               <button 
                 onClick={() => navigate(-1)}
@@ -255,16 +255,21 @@ export default function ProfilePage() {
                 <ArrowLeft size={20} />
               </button>
             )}
-            <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} url={targetProfile.avatar_url} size="xl" />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-charcoal-50">{targetProfile.display_name}</h1>
+            <UserAvatar
+              display_name={targetProfile.display_name}
+              avatar_color={targetProfile.avatar_color}
+              avatar_url={targetProfile.avatar_url}
+              size="xl"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                <h1 className="text-xl font-bold text-charcoal-50 truncate">{targetProfile.display_name}</h1>
                 {targetProfile.is_admin && <span className="pill-admin">Admin</span>}
               </div>
               {targetProfile.username && (
-                <p className="text-charcoal-400 text-sm">@{targetProfile.username}</p>
+                <p className="text-charcoal-400 text-sm truncate">@{targetProfile.username}</p>
               )}
-              <div className="flex items-center gap-3 mt-1 text-xs text-charcoal-500">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-charcoal-500">
                 <span>{totalWins}W / {totalPlayed} games</span>
                 <span>•</span>
                 <span>{winPct}% win rate</span>
@@ -272,19 +277,22 @@ export default function ProfilePage() {
             </div>
           </div>
           {isOwnProfile ? (
-            <div className="flex gap-2 items-center">
+            <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto sm:justify-end">
               <ThemeToggle />
               <button
                 onClick={() => setShowSettingsModal(true)}
                 className="p-2 rounded-xl hover:bg-charcoal-700 text-charcoal-400 transition-colors"
+                aria-label="Open settings"
               >
                 <Settings size={20} />
               </button>
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-xl hover:bg-charcoal-700 text-charcoal-400 transition-colors"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-charcoal-700/70 hover:bg-charcoal-700 text-charcoal-200 transition-colors ml-auto sm:ml-0 sm:px-2 sm:bg-transparent sm:text-charcoal-400"
+                aria-label="Log out"
               >
                 <LogOut size={20} />
+                <span className="text-sm font-semibold sm:hidden">Log Out</span>
               </button>
             </div>
           ) : currentUser && (
@@ -471,6 +479,26 @@ export default function ProfilePage() {
           </div>
         )}
 
+        {isOwnProfile && (
+          <Link
+            to="/about"
+            className="card p-4 flex items-center justify-between gap-4 hover:border-charcoal-600 transition-colors group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-charcoal-800 border border-charcoal-700 flex items-center justify-center flex-shrink-0">
+                <Info size={18} className="text-charcoal-300" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-charcoal-100 font-semibold">About The App</p>
+                <p className="text-charcoal-400 text-sm truncate">
+                  Learn what the app does, how it works, and what makes it unique.
+                </p>
+              </div>
+            </div>
+            <ChevronRight size={18} className="text-charcoal-500 group-hover:text-charcoal-300 flex-shrink-0" />
+          </Link>
+        )}
+
         {/* Admin Panel */}
         {isOwnProfile && isCurrentUserAdmin && (
           <div className="card overflow-hidden">
@@ -499,7 +527,12 @@ export default function ProfilePage() {
                     <div className="space-y-2">
                       {guestProfiles.map(guest => (
                         <div key={guest.id} className="flex items-center gap-3 p-2 rounded-lg bg-charcoal-700/50">
-                          <Avatar name={guest.display_name} color={guest.avatar_color} size="sm" />
+                          <UserAvatar
+                            display_name={guest.display_name}
+                            avatar_color={guest.avatar_color}
+                            avatar_url={guest.avatar_url}
+                            size="sm"
+                          />
                           <span className="text-charcoal-200 text-sm flex-1">{guest.display_name}</span>
                           <button
                             onClick={() => {
@@ -529,7 +562,12 @@ export default function ProfilePage() {
             <div className="space-y-6">
               <div className="flex flex-col items-center gap-4">
                 <div className="relative group">
-                  <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} url={targetProfile.avatar_url} size="xl" />
+                  <UserAvatar
+                    display_name={targetProfile.display_name}
+                    avatar_color={targetProfile.avatar_color}
+                    avatar_url={targetProfile.avatar_url}
+                    size="xl"
+                  />
                   <label className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
                     <Edit3 size={24} className="text-charcoal-50" />
                     <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
@@ -623,11 +661,21 @@ export default function ProfilePage() {
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-charcoal-800/50 border border-charcoal-700">
-              <Avatar name={currentUser?.display_name || ''} color={currentUser?.avatar_color} size="lg" />
+              <UserAvatar
+                display_name={currentUser?.display_name}
+                avatar_color={currentUser?.avatar_color}
+                avatar_url={currentUser?.avatar_url}
+                size="lg"
+              />
               <p className="text-sm font-black text-charcoal-50 uppercase tracking-tight text-center truncate w-full">You</p>
             </div>
             <div className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-charcoal-800/50 border border-charcoal-700">
-              <Avatar name={targetProfile.display_name} color={targetProfile.avatar_color} size="lg" />
+              <UserAvatar
+                display_name={targetProfile.display_name}
+                avatar_color={targetProfile.avatar_color}
+                avatar_url={targetProfile.avatar_url}
+                size="lg"
+              />
               <p className="text-sm font-black text-charcoal-50 uppercase tracking-tight text-center truncate w-full">{targetProfile.display_name}</p>
             </div>
           </div>

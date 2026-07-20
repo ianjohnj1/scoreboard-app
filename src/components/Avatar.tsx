@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { getInitials } from '../lib/auth';
 
 type AvatarProps = {
@@ -18,10 +18,21 @@ const sizeClasses = {
 };
 
 export default function Avatar({ name, color = '#3b82f6', url, size = 'md', className = '' }: AvatarProps) {
-  if (url) {
+  const [hasImageError, setHasImageError] = useState(false);
+
+  useEffect(() => {
+    setHasImageError(false);
+  }, [url]);
+
+  if (url && !hasImageError) {
     return (
       <div className={`${sizeClasses[size]} rounded-full overflow-hidden flex-shrink-0 ${className}`}>
-        <img src={url} alt={name} className="w-full h-full object-cover" />
+        <img
+          src={url}
+          alt={name}
+          className="w-full h-full object-cover"
+          onError={() => setHasImageError(true)}
+        />
       </div>
     );
   }

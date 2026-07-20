@@ -4,7 +4,7 @@ import { Trophy, Star, TrendingUp, RotateCcw, AlertCircle, Info, Target, Activit
 import { supabase } from '../lib/supabase';
 import { getSportLabel } from '../lib/matches';
 import { getGlobalLeaderboardData, SEASON_POINT_RULES } from '../lib/stats';
-import Avatar from '../components/Avatar';
+import UserAvatar from '../components/UserAvatar';
 import ThemeToggle from '../components/ThemeToggle';
 import Modal from '../components/Modal';
 import type { Profile, PlayerCareerStats } from '../lib/supabase';
@@ -207,7 +207,12 @@ export default function LeaderboardPage() {
                 <div className="flex flex-col items-center flex-1 max-w-[100px]">
                   <Link to={`/profile/${entries[1].profile_id}`} className="flex flex-col items-center group">
                     <div className="relative mb-2 transition-transform group-hover:scale-105">
-                      <Avatar name={entries[1].profile?.display_name || '?'} color={entries[1].profile?.avatar_color} size="lg" url={entries[1].profile?.avatar_url} />
+                      <UserAvatar
+                        display_name={entries[1].profile?.display_name}
+                        avatar_color={entries[1].profile?.avatar_color}
+                        avatar_url={entries[1].profile?.avatar_url}
+                        size="lg"
+                      />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-charcoal-400 border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">2</div>
                     </div>
                     <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-charcoal-50">{entries[1].profile?.display_name}</p>
@@ -230,7 +235,12 @@ export default function LeaderboardPage() {
                       <div className="absolute -top-6 left-1/2 -translate-x-1/2">
                         <Trophy size={24} className="text-warning-400 drop-shadow-lg" />
                       </div>
-                      <Avatar name={entries[0].profile?.display_name || '?'} color={entries[0].profile?.avatar_color} size="xl" url={entries[0].profile?.avatar_url} />
+                      <UserAvatar
+                        display_name={entries[0].profile?.display_name}
+                        avatar_color={entries[0].profile?.avatar_color}
+                        avatar_url={entries[0].profile?.avatar_url}
+                        size="xl"
+                      />
                       <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-warning-400 border-2 border-charcoal-900 flex items-center justify-center text-xs font-bold text-charcoal-900">1</div>
                     </div>
                     <p className="text-sm font-bold text-charcoal-50 truncate w-full text-center group-hover:text-charcoal-50">{entries[0].profile?.display_name}</p>
@@ -250,7 +260,12 @@ export default function LeaderboardPage() {
                 <div className="flex flex-col items-center flex-1 max-w-[100px]">
                   <Link to={`/profile/${entries[2].profile_id}`} className="flex flex-col items-center group">
                     <div className="relative mb-2 transition-transform group-hover:scale-105">
-                      <Avatar name={entries[2].profile?.display_name || '?'} color={entries[2].profile?.avatar_color} size="lg" url={entries[2].profile?.avatar_url} />
+                      <UserAvatar
+                        display_name={entries[2].profile?.display_name}
+                        avatar_color={entries[2].profile?.avatar_color}
+                        avatar_url={entries[2].profile?.avatar_url}
+                        size="lg"
+                      />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cricket border-2 border-charcoal-900 flex items-center justify-center text-[10px] font-bold text-charcoal-900">3</div>
                     </div>
                     <p className="text-xs font-bold text-charcoal-200 truncate w-full text-center group-hover:text-charcoal-50">{entries[2].profile?.display_name}</p>
@@ -335,7 +350,13 @@ export default function LeaderboardPage() {
                         {rank + 1}
                       </div>
                       <Link to={`/profile/${entry.profile_id}`} className="flex flex-1 items-center gap-3 min-w-0 group">
-                        <Avatar name={entry.profile?.display_name || '?'} color={entry.profile?.avatar_color} size="sm" url={entry.profile?.avatar_url} className="group-hover:scale-105 transition-transform flex-shrink-0" />
+                        <UserAvatar
+                          display_name={entry.profile?.display_name}
+                          avatar_color={entry.profile?.avatar_color}
+                          avatar_url={entry.profile?.avatar_url}
+                          size="sm"
+                          className="group-hover:scale-105 transition-transform flex-shrink-0"
+                        />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-charcoal-100 font-semibold text-sm truncate group-hover:text-charcoal-50">{entry.profile?.display_name}</p>

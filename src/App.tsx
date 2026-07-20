@@ -13,6 +13,7 @@ import SpectatorPage from './pages/SpectatorPage';
 import HistoryPage from './pages/HistoryPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import ProfilePage from './pages/ProfilePage';
+import AboutPage from './pages/AboutPage';
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { currentUser, loading } = useAuth();
@@ -120,6 +121,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <LeaderboardPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/about"
+          element={
+            <ProtectedRoute>
+              <AboutPage />
             </ProtectedRoute>
           }
         />
