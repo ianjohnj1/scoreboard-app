@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { recordEvent } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
@@ -47,8 +47,6 @@ export default function CustomRoom({ ctx }: { ctx: MatchContext }) {
       ? (scores[b.id] || 0) - (scores[a.id] || 0)
       : (scores[a.id] || 0) - (scores[b.id] || 0)
   );
-
-  const leader = sortedEntities[0];
 
   return (
     <div className="flex flex-col h-full">

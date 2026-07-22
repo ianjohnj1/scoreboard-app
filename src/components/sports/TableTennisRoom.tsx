@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { recordEvent } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
@@ -15,14 +15,11 @@ export default function TableTennisRoom({ ctx }: { ctx: MatchContext }) {
   const winPoints = (match.house_rules as Record<string, unknown>)?.win_points as number ?? 11;
 
   const isTeam = teams.length >= 2;
-  const p0 = isTeam ? teams[0] : (() => {
-    const pl = players.map(p => profiles.get(p.profile_id)).filter(Boolean) as Profile[];
-    return pl[0];
-  })();
-  const p1 = isTeam ? teams[1] : (() => {
-    const pl = players.map(p => profiles.get(p.profile_id)).filter(Boolean) as Profile[];
-    return pl[1];
-  })();
+  const individualPlayers = players
+    .map(player => profiles.get(player.profile_id))
+    .filter(Boolean) as Profile[];
+  const p0 = isTeam ? teams[0] : individualPlayers[0];
+  const p1 = isTeam ? teams[1] : individualPlayers[1];
 
   const [state, setState] = useState<TTState>({ scores: [0, 0], sets: [0, 0], serving: 0 });
 
@@ -58,11 +55,11 @@ export default function TableTennisRoom({ ctx }: { ctx: MatchContext }) {
             style={{ backgroundColor: `${getColor(idx === 0 ? p0 : p1, idx)}15` }}
             disabled={isSpectator || isTvDisplayMode}
           >
-            {!isTeam && (idx === 0 ? p0 : p1) && (
+            {!isTeam && (idx === 0 ? individualPlayers[0] : individualPlayers[1]) && (
               <UserAvatar
-                display_name={(idx === 0 ? p0 : p1)?.display_name}
-                avatar_color={(idx === 0 ? p0 : p1)?.avatar_color}
-                avatar_url={(idx === 0 ? p0 : p1)?.avatar_url}
+                display_name={(idx === 0 ? individualPlayers[0] : individualPlayers[1])?.display_name}
+                avatar_color={(idx === 0 ? individualPlayers[0] : individualPlayers[1])?.avatar_color}
+                avatar_url={(idx === 0 ? individualPlayers[0] : individualPlayers[1])?.avatar_url}
                 size="md"
               />
             )}

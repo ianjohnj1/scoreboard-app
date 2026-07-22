@@ -134,29 +134,61 @@ export async function getActiveMatches(): Promise<MatchRoom[]> {
 }
 
 export async function deleteMatch(matchId: string): Promise<void> {
-  // First, delete related records manually in case cascading isn't set up
-  // We do this in parallel to be efficient
   try {
-    // 1. Clear any references in the match_rooms record itself first to avoid FK issues
-    await supabase.from('match_rooms').update({ 
-      winner_team_id: null, 
-      winner_profile_id: null 
-    }).eq('id', matchId);
+    const { error: clearWinnerError } = await supabase
+      .from('match_rooms')
+      .update({
+        winner_team_id: null,
+        winner_profile_id: null,
+      })
+      .eq('id', matchId);
 
-    // 2. Delete related records in other tables
-    await Promise.all([
-      supabase.from('match_events').delete().eq('match_id', matchId),
-      supabase.from('match_players').delete().eq('match_id', matchId),
-      supabase.from('match_teams').delete().eq('match_id', matchId),
-      supabase.from('cricket_innings').delete().eq('match_id', matchId),
-      supabase.from('cricket_player_stats').delete().eq('match_id', matchId),
-      supabase.from('golf_holes').delete().eq('match_id', matchId),
-      supabase.from('golf_scores').delete().eq('match_id', matchId),
-      // Also clear active sessions pointing to this match
-      supabase.from('active_sessions').update({ match_id: null }).eq('match_id', matchId)
-    ]);
+    if (clearWinnerError) throw clearWinnerError;
 
-    // 3. Finally, delete the match room
+    // Delete dependents in a safe order so child rows are removed before parents.
+    const operations: Array<{ label: string; run: () => Promise<{ error: Error | null }> }> = [
+      {
+        label: 'match_events',
+        run: async () => await supabase.from('match_events').delete().eq('match_id', matchId),
+      },
+      {
+        label: 'cricket_player_stats',
+        run: async () => await supabase.from('cricket_player_stats').delete().eq('match_id', matchId),
+      },
+      {
+        label: 'cricket_innings',
+        run: async () => await supabase.from('cricket_innings').delete().eq('match_id', matchId),
+      },
+      {
+        label: 'golf_scores',
+        run: async () => await supabase.from('golf_scores').delete().eq('match_id', matchId),
+      },
+      {
+        label: 'golf_holes',
+        run: async () => await supabase.from('golf_holes').delete().eq('match_id', matchId),
+      },
+      {
+        label: 'match_players',
+        run: async () => await supabase.from('match_players').delete().eq('match_id', matchId),
+      },
+      {
+        label: 'match_teams',
+        run: async () => await supabase.from('match_teams').delete().eq('match_id', matchId),
+      },
+      {
+        label: 'active_sessions',
+        run: async () => await supabase.from('active_sessions').update({ match_id: null }).eq('match_id', matchId),
+      },
+    ];
+
+    for (const operation of operations) {
+      const { error } = await operation.run();
+      if (error) {
+        console.error(`Error cleaning up ${operation.label} during deleteMatch:`, error);
+        throw error;
+      }
+    }
+
     const { error } = await supabase
       .from('match_rooms')
       .delete()
@@ -280,6 +312,7 @@ export function getSportLabel(sport: string, customName?: string | null, variant
 
   if (variant) {
     if (variant === 'chip_off') return 'Chip Off';
+    if (variant === 'putt_vs_putt') return 'PvP (Putt vs Putt)';
     if (variant === 'backyard') return 'Backyard Cricket';
     if (variant === 'countdown') return 'Darts - 501/301';
     if (variant === 'around_the_world') return 'Darts - Around the World';

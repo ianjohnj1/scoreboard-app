@@ -1,16 +1,14 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, Filter, ChevronRight, Trophy, Lock, Trash2, RotateCcw, AlertCircle } from 'lucide-react';
+import { Clock, ChevronRight, Lock, Trash2, RotateCcw, AlertCircle } from 'lucide-react';
 import { getRecentMatches, getSportIcon, getSportLabel, deleteMatch } from '../lib/matches';
-import { supabase } from '../lib/supabase';
 import ThemeToggle from '../components/ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
-import Avatar from '../components/Avatar';
-import type { MatchRoom, Profile } from '../lib/supabase';
+import type { MatchRoom } from '../lib/supabase';
 
 export default function HistoryPage() {
   const navigate = useNavigate();
-  const { currentUser, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const [matches, setMatches] = useState<MatchRoom[]>([]);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [loading, setLoading] = useState(true);

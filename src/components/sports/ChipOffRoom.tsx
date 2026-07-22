@@ -1,12 +1,12 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { recordEvent, undoLastEvent, completeMatchWithWinner } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';
 import Modal from '../Modal';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
-import type { Profile, GolfHole, MatchEvent } from '../../lib/supabase';
-import { Trophy, Star, ChevronRight, RotateCcw, AlertCircle, ArrowLeft } from 'lucide-react';
+import type { Profile, MatchEvent } from '../../lib/supabase';
+import { Trophy, Star, RotateCcw, AlertCircle, ArrowLeft } from 'lucide-react';
 
 interface ChipOffRules {
   balls_per_turn?: number;
@@ -15,7 +15,7 @@ interface ChipOffRules {
 }
 
 export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
+  const { match, players, profiles, isSpectator, currentUser, isTvDisplayMode } = ctx;
   const rules = (match.house_rules || {}) as ChipOffRules;
   const ballsPerTurn = rules.balls_per_turn || 3;
   const totalRounds = rules.total_rounds || 9;

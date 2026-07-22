@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { recordEvent } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';

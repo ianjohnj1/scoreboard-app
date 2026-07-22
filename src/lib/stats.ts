@@ -82,6 +82,7 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
   const stats: MatchStats[] = [];
 
   const isChipOff = match.sport === 'golf' && (match.house_rules as any)?.variant === 'chip_off';
+  const isPuttVsPutt = match.sport === 'golf' && (match.house_rules as any)?.variant === 'putt_vs_putt';
 
   let calculatedWinnerProfileId = match.winner_profile_id;
   let calculatedWinnerTeamId = match.winner_team_id;
@@ -208,6 +209,61 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
             is_winner: calculatedWinnerProfileId === p.profile_id,
             score: s.points,
             extra_stats: s
+          });
+        });
+      } else if (isPuttVsPutt) {
+        const { data: events } = await supabase
+          .from('match_events')
+          .select('*')
+          .eq('match_id', matchId)
+          .eq('is_undone', false);
+
+        const playerMap = new Map<string, any>();
+        players.forEach(p => playerMap.set(p.profile_id, {
+          holed_putts_total: 0,
+          total_putt_attempts: 0,
+          clutch_putts: 0,
+        }));
+
+        events?.forEach(e => {
+          if (e.event_type === 'putt_attempt' && e.player_id) {
+            const existing = playerMap.get(e.player_id) || {
+              holed_putts_total: 0,
+              total_putt_attempts: 0,
+              clutch_putts: 0,
+            };
+            existing.total_putt_attempts += 1;
+            if (e.event_data.outcome === 'holed') existing.holed_putts_total += 1;
+            playerMap.set(e.player_id, existing);
+          }
+
+          if (e.event_type === 'tiebreak_result' && e.player_id) {
+            const existing = playerMap.get(e.player_id) || {
+              holed_putts_total: 0,
+              total_putt_attempts: 0,
+              clutch_putts: 0,
+            };
+            existing.clutch_putts += 1;
+            playerMap.set(e.player_id, existing);
+          }
+        });
+
+        players.forEach(p => {
+          const s = playerMap.get(p.profile_id) || {
+            holed_putts_total: 0,
+            total_putt_attempts: 0,
+            clutch_putts: 0,
+          };
+
+          stats.push({
+            profile_id: p.profile_id,
+            sport: 'putt_vs_putt',
+            is_winner: !!p.team_id && calculatedWinnerTeamId === p.team_id,
+            score: s.holed_putts_total,
+            extra_stats: {
+              ...s,
+              career_pct_holed: s.total_putt_attempts > 0 ? (s.holed_putts_total / s.total_putt_attempts) * 100 : 0,
+            }
           });
         });
       } else {
@@ -638,6 +694,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
         best_score: null,
         best_score_classic: null,
         best_score_chip_off: null,
+        pvp_career_holes: 0,
         season_points: 0,
         cricket_lifetime_runs: 0,
         cricket_lifetime_wickets: 0,
@@ -659,6 +716,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
     const matchPlayers = players?.filter(p => p.match_id === match.id) || [];
     const matchEvents = events?.filter(e => e.match_id === match.id) || [];
     const isChipOff = match.sport === 'golf' && (match.house_rules as any)?.variant === 'chip_off';
+    const isPuttVsPutt = match.sport === 'golf' && (match.house_rules as any)?.variant === 'putt_vs_putt';
     
     const playerMap = new Map<string, any>();
 
@@ -764,6 +822,15 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
             existing.strokes += e.event_data.strokes || 0;
             if (e.event_data.holeInOne) existing.hio += 1;
             break;
+          case 'putt_attempt':
+            existing.total_putt_attempts = (existing.total_putt_attempts || 0) + 1;
+            if (e.event_data.outcome === 'holed') {
+              existing.holed_putts_total = (existing.holed_putts_total || 0) + 1;
+            }
+            break;
+          case 'tiebreak_result':
+            existing.clutch_putts = (existing.clutch_putts || 0) + 1;
+            break;
           case 'point':
           case 'score':
             existing.points += (e.event_data.amount as number) || 1;
@@ -793,13 +860,14 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
     matchPlayers.forEach(p => {
       const s = playerMap.get(p.profile_id) || { 
         points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
-        runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0 
+        runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0,
+        holed_putts_total: 0, total_putt_attempts: 0, clutch_putts: 0,
       };
       
       const isWinner = match.winner_profile_id === p.profile_id || (!!p.team_id && match.winner_team_id === p.team_id);
       let score = s.points;
       if (match.sport === 'cricket') score = s.runs;
-      if (match.sport === 'golf') score = isChipOff ? s.points : s.strokes;
+      if (match.sport === 'golf') score = isChipOff ? s.points : isPuttVsPutt ? s.holed_putts_total : s.strokes;
 
       matchStatsList.push({
         profile_id: p.profile_id,
@@ -811,7 +879,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
 
     // 3.2 Determine placement points
     const sortedForPlacement = [...matchStatsList].sort((a, b) => {
-      if (match.sport === 'golf' && !isChipOff) return a.score - b.score; // Lower strokes is better for classic
+      if (match.sport === 'golf' && !isChipOff && !isPuttVsPutt) return a.score - b.score; // Lower strokes is better for classic
       return b.score - a.score;
     });
 
@@ -827,7 +895,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
       if (match.sport === 'cricket') {
         if (ms.score >= 50) milestoneSP += SEASON_POINT_RULES.milestones.cricket[0].points;
         if ((ms.extra.wickets || 0) >= 3) milestoneSP += SEASON_POINT_RULES.milestones.cricket[1].points;
-      } else if (match.sport === 'golf') {
+      } else if (match.sport === 'golf' && !isPuttVsPutt) {
         const totalAces = (ms.extra.hio || 0) + (ms.extra.tens || 0);
         milestoneSP += totalAces * SEASON_POINT_RULES.milestones.golf[0].points;
       }
@@ -848,6 +916,8 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
           g.golf_lifetime_hio += (ms.extra.tens || 0);
           g.chip_off_total_chips += (ms.extra.total_chips || 0);
           g.chip_off_scoring_chips += (ms.extra.scoring_chips || 0);
+        } else if (isPuttVsPutt) {
+          g.pvp_career_holes += (ms.extra.holed_putts_total || 0);
         } else {
           g.golf_lifetime_hio += (ms.extra.hio || 0);
         }
@@ -857,7 +927,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
       if (g.best_score === null) {
         g.best_score = ms.score;
       } else {
-        if (match.sport === 'golf' && !isChipOff) {
+        if (match.sport === 'golf' && !isChipOff && !isPuttVsPutt) {
           if (ms.score > 0) g.best_score = Math.min(g.best_score, ms.score);
         } else {
           g.best_score = Math.max(g.best_score, ms.score);
@@ -872,7 +942,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
           } else {
             g.best_score_chip_off = Math.max(g.best_score_chip_off, ms.score);
           }
-        } else {
+        } else if (!isPuttVsPutt) {
           if (g.best_score_classic === null) {
             if (ms.score > 0) g.best_score_classic = ms.score;
           } else {

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Info, Radio, Trophy, Users, Zap } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';

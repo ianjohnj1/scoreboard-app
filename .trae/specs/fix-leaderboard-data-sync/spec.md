@@ -1,17 +1,17 @@
 # Leaderboard Data Sync & Database Hookup Spec
 
 ## Why
-There is a reported disconnect between the raw match events recorded in Supabase (`match_events`) and the aggregated career stats shown on the app's leaderboard. The current implementation relies on an intermediate `player_career_stats` table that is only updated upon match completion, which can lead to stale data if aggregation fails or is not triggered. Additionally, the current leaderboard logic has scaling and accuracy issues, such as duplicate users in the "All Sports" view and inefficient in-memory sorting.
+There is a reported disconnect between completed-match data in Supabase and the aggregated stats shown across leaderboard and profile surfaces. The current implementation is not a single-source pipeline: `LeaderboardPage.tsx` rebuilds leaderboard entries through `getGlobalLeaderboardData()` using a mixed-source aggregation of `match_rooms`, `match_players`, `profiles`, `match_events`, and `cricket_player_stats`, while `updateCareerStats()` separately writes persisted `player_career_stats` rows on match completion. If either path misses data or interprets it differently, users can see stale or inconsistent results between the leaderboard, profile stats, and the underlying completed-match records. Additionally, the leaderboard logic has scaling and accuracy issues, such as duplicate users in the "All Sports" view and inefficient in-memory sorting.
 
 ## What Changes
-- **Unified Aggregation Source**: Update the stat aggregation logic to prioritize `match_events` as the source of truth for all sports where possible, ensuring consistency with the "match events database".
-- **Robust Sync Trigger**: Ensure that `updateCareerStats` is reliably called and handled during match finalization.
+- **Accurate Source Mapping**: Update the spec and implementation notes to reflect the current mixed-source aggregation model instead of describing the leaderboard as a pure `match_events` reader or a pure `player_career_stats` reader.
+- **Robust Sync Trigger**: Ensure that `updateCareerStats` is reliably called and handled during match finalization so persisted career stats stay aligned with the leaderboard's completed-match view.
 - **Enhanced Leaderboard Fetching**: Refactor `LeaderboardPage.tsx` to handle "All Sports" view correctly by aggregating per user, and optimize sorting.
-- **Improved Data Integrity**: Add explicit error logging and potentially a "Sync" mechanism to re-calculate career stats from raw events if discrepancies are detected.
+- **Improved Data Integrity**: Add explicit error logging and potentially a resync mechanism that can reconcile leaderboard-facing aggregation with persisted `player_career_stats` when discrepancies are detected.
 
 ## Impact
 - Affected code: `src/lib/stats.ts`, `src/pages/LeaderboardPage.tsx`, `src/lib/matches.ts`.
-- Database: `player_career_stats`, `match_events`.
+- Database: `match_rooms`, `match_players`, `profiles`, `match_events`, `cricket_player_stats`, `player_career_stats`.
 
 ## ADDED Requirements
 ### Requirement: User-Centric Global Leaderboard
@@ -23,7 +23,7 @@ The "All Sports" view SHALL aggregate a user's performance across all sports int
 
 ## MODIFIED Requirements
 ### Requirement: Stat Aggregation
-The system SHALL aggregate stats from `match_events` for all sports that support point-based or event-based scoring (Cricket, Golf Chip Off, Darts, etc.) to ensure the leaderboard is "hooked up" to the primary event database.
+The system SHALL document and maintain leaderboard/stat aggregation in line with the live mixed-source pipeline: leaderboard data is rebuilt from completed matches plus supporting tables (`match_rooms`, `match_players`, `profiles`, `match_events`, and `cricket_player_stats`), while `player_career_stats` remains the persisted career-summary table updated during match completion.
 
 ## REMOVED Requirements
 None.

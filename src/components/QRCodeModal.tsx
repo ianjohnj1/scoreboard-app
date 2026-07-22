@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, ExternalLink, Copy, Check } from 'lucide-react';
 import { getSpectatorUrl, getSportIcon, getSportLabel } from '../lib/matches';
 import type { MatchRoom } from '../lib/supabase';

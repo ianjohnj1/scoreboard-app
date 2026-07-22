@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getInitials } from '../lib/auth';
 
 type AvatarProps = {

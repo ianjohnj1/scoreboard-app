@@ -8,6 +8,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    fetch: (url, options = {}) => {
+      // Dynamically attach the session ID to every request for RLS
+      const sessionId = typeof window !== 'undefined' ? localStorage.getItem('sk_session_id') : null;
+      if (sessionId) {
+        const headers = new Headers(options.headers || {});
+        headers.set('x-session-id', sessionId);
+        options.headers = headers;
+      }
+      return fetch(url, options);
+    },
+  },
   realtime: {
     params: { eventsPerSecond: 20 },
   },
@@ -34,6 +46,7 @@ export type MatchRoom = {
   sport: string;
   custom_game_name: string | null;
   match_time: string;
+  started_at?: string | null;
   status: 'active' | 'paused' | 'completed';
   is_practice: boolean;
   created_by: string | null;
@@ -60,6 +73,7 @@ export type MatchPlayer = {
   match_id: string;
   profile_id: string;
   team_id: string | null;
+  lineup_order: number | null;
   batting_order: number | null;
   bowling_order: number | null;
   role: 'player' | 'spectator' | 'scorer';
@@ -132,6 +146,11 @@ export type PlayerCareerAnalytics = {
   ace_frequency: number;
   hazard_avoidance_rating: number;
   average_proximity_tier: number;
+  // PvP stats
+  holed_putts_total: number;
+  total_putt_attempts: number;
+  career_pct_holed: number;
+  clutch_putts: number;
   // Darts stats
   countdown_ppr: number;
   first_nine_ppr: number;

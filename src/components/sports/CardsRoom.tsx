@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { recordEvent } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';

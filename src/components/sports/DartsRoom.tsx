@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Heart, RotateCcw, Target, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DartsBoard from './DartsBoard';
@@ -184,9 +184,11 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
 
   const handleTargetOverride = (playerId: string, nextTargetNumber: number) => {
     if (variant !== 'killer' || state.killer?.assignmentsLocked || !isAdmin) return;
+    const killerState = state.killer;
+    if (!killerState) return;
 
     const currentAssignments = Object.fromEntries(
-      Object.entries(state.killer.players).map(([candidateId, candidateState]) => [candidateId, candidateState.targetNumber])
+      Object.entries(killerState.players).map(([candidateId, candidateState]) => [candidateId, candidateState.targetNumber])
     ) as Record<string, number>;
 
     const swapPlayerId = Object.entries(currentAssignments).find(([candidateId, value]) => (

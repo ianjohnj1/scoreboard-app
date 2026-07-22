@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { recordEvent, undoLastEvent, completeMatchWithWinner, completeMatchWithTeamWinner } from '../../lib/matches';
 import Modal from '../Modal';
@@ -6,7 +6,7 @@ import UserAvatar from '../UserAvatar';
 import { Trophy, RotateCcw, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
-import type { CricketInnings, CricketPlayerStats, MatchTeam, Profile } from '../../lib/supabase';
+import type { CricketInnings, CricketPlayerStats, Profile } from '../../lib/supabase';
 
 type DismissalMethod = 'Bowled' | 'Caught' | 'LBW' | 'Run Out' | 'Stumped' | 'Hit Wicket' | 'Caught & Bowled';
 
@@ -39,34 +39,31 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   const [showNextBatterModal, setShowNextBatterModal] = useState(false);
   const [nextBatterProfileId, setNextBatterProfileId] = useState<string | null>(null);
   const isMountedRef = useRef(true);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const loadRequestIdRef = useRef(0);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => { 
       isMountedRef.current = false;
-      if (abortControllerRef.current) abortControllerRef.current.abort();
       if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
     };
   }, []);
 
-  const loadRecentEvents = useCallback(async (signal?: AbortSignal) => {
+  const loadRecentEvents = useCallback(async (requestId: number) => {
     const { data, error } = await supabase
       .from('match_events')
       .select('*')
       .eq('match_id', match.id)
       .eq('is_undone', false)
       .order('sequence_num', { ascending: false })
-      .limit(12)
-      .abortSignal(signal);
+      .limit(12);
 
-    if (!isMountedRef.current) return;
+    if (!isMountedRef.current || requestId !== loadRequestIdRef.current) return;
 
     if (error) {
-      if (!error.message?.includes('AbortError')) {
-        console.error("Error loading recent events:", error);
-      }
+      console.error("Error loading recent events:", error);
       return;
     }
 
@@ -89,16 +86,12 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   }, [match.id]);
 
   const loadInnings = useCallback(async () => {
-    // Abort any pending requests
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
 
     try {
       setLoading(true);
-      await loadRecentEvents(signal);
+      await loadRecentEvents(requestId);
       const { data, error } = await supabase
         .from('cricket_innings')
         .select('*')
@@ -106,15 +99,12 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         .eq('is_completed', false)
         .order('innings_number', { ascending: false })
         .limit(1)
-        .maybeSingle()
-        .abortSignal(signal);
+        .maybeSingle();
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || requestId !== loadRequestIdRef.current) return;
 
       if (error) {
-        if (!error.message?.includes('AbortError')) {
-          console.error("Error loading innings:", error);
-        }
+        console.error("Error loading innings:", error);
         return;
       }
 
@@ -124,15 +114,12 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         const { data: stats, error: statsError } = await supabase
           .from('cricket_player_stats')
           .select('*')
-          .eq('innings_id', data.id)
-          .abortSignal(signal);
+          .eq('innings_id', data.id);
         
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || requestId !== loadRequestIdRef.current) return;
 
         if (statsError) {
-          if (!statsError.message?.includes('AbortError')) {
-            console.error("Error loading stats:", statsError);
-          }
+          console.error("Error loading stats:", statsError);
         } else {
           const map = new Map((stats || []).map((s: CricketPlayerStats) => [s.profile_id, s]));
           setPlayerStats(map);
@@ -142,24 +129,20 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         const { count, error: countError } = await supabase
           .from('cricket_innings')
           .select('*', { count: 'exact', head: true })
-          .eq('match_id', match.id)
-          .abortSignal(signal);
+          .eq('match_id', match.id);
         
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || requestId !== loadRequestIdRef.current) return;
 
         if (countError) {
-          if (!countError.message?.includes('AbortError')) {
-            console.error("Error checking innings count:", countError);
-          }
+          console.error("Error checking innings count:", countError);
         } else if (!count || count === 0) {
           await startFirstInnings();
         }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError' || err.message?.includes('AbortError')) return;
       console.error("Caught error in loadInnings:", err);
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && requestId === loadRequestIdRef.current) {
         setLoading(false);
       }
     }
@@ -754,7 +737,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                   {recentEvents.length === 0 ? (
                     <div className="text-[10px] text-charcoal-700 font-mono italic">Waiting for first ball...</div>
                   ) : (
-                    [...recentEvents].reverse().map((event, i) => {
+                    [...recentEvents].reverse().map((event) => {
                       const isWicket = event.event_type === 'wicket';
                       const runs = event.event_data?.runs;
                       const extra = event.event_data?.extra;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { recordEvent } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';
@@ -168,11 +168,6 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
     };
   }, [match.id, loadData]);
 
-  const updatePar = async (holeId: string, par: number) => {
-    await supabase.from('golf_holes').update({ par }).eq('id', holeId);
-    await loadData();
-  };
-
   const setScore = async (holeId: string, profileId: string, strokes: number | null, holeInOne = false) => {
     if (!currentUser || loading) return;
     setLoading(true);
@@ -331,7 +326,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                   {matchPlayers.map(player => {
                     const score = scores.get(`${hole.id}:${player.id}`);
                     const toPar = score?.strokes != null ? score.strokes - hole.par : null;
-                    const label = toPar != null ? (SCORE_LABELS[String(toPar) as keyof typeof SCORE_LABELS] || null) : null;
+                    const label = toPar != null ? SCORE_LABELS[toPar] || null : null;
                     return (
                       <td key={player.id} className="px-2 py-2.5 text-center">
                         <button

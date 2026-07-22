@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, getSportIcon, getSportLabel } from '../lib/matches';
 import { supabase } from '../lib/supabase';
@@ -6,12 +6,14 @@ import CricketRoom from '../components/sports/CricketRoom';
 import GolfRoom from '../components/sports/GolfRoom';
 import DartsRoom from '../components/sports/DartsRoom';
 import ChipOffRoom from '../components/sports/ChipOffRoom';
+import PvPRoom from '../components/sports/PvPRoom';
 import TableTennisRoom from '../components/sports/TableTennisRoom';
 import PoolRoom from '../components/sports/PoolRoom';
 import BasketballRoom from '../components/sports/BasketballRoom';
 import CardsRoom from '../components/sports/CardsRoom';
 import CustomRoom from '../components/sports/CustomRoom';
 import UserAvatar from '../components/UserAvatar';
+import HouseRulesPanel from '../components/HouseRulesPanel';
 import type { MatchRoom, MatchTeam, MatchPlayer, Profile } from '../lib/supabase';
 import type { MatchContext } from './MatchRoomPage';
 
@@ -97,6 +99,8 @@ export default function SpectatorPage() {
   let SportRoom = sportRooms[match.sport] || CustomRoom;
   if (match.sport === 'golf' && match.house_rules?.variant === 'chip_off') {
     SportRoom = ChipOffRoom;
+  } else if (match.sport === 'golf' && match.house_rules?.variant === 'putt_vs_putt') {
+    SportRoom = PvPRoom;
   }
 
   const ctx: MatchContext = {
@@ -108,6 +112,7 @@ export default function SpectatorPage() {
     currentUser: null,
     isAdmin: false,
     isBackyard: match.house_rules?.variant === 'backyard',
+    isTvDisplayMode: false,
     onRefresh: loadData,
   };
 
@@ -140,6 +145,7 @@ export default function SpectatorPage() {
             <p className="text-charcoal-500 text-xs">Spectator View</p>
             <p className="text-charcoal-400 text-xs">{new Date(match.started_at || match.created_at).toLocaleDateString()}</p>
           </div>
+          <HouseRulesPanel sport={match.sport} houseRules={match.house_rules} />
         </div>
           {participantProfiles.length > 0 && (
             <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">

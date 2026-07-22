@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  User, LogOut, Settings, Star, BarChart2, Users,
+  LogOut, Settings, Star, BarChart2, Users,
   Link as LinkIcon, Shield, Edit3, Check, ArrowLeft, ArrowRightLeft, Info, ChevronRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -454,6 +454,31 @@ export default function ProfilePage() {
                     </div>
                   )}
 
+                  {s.sport === 'putt_vs_putt' && (
+                    <div className="space-y-2 mt-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="stat-card bg-warning-950/20 border-warning-900/30">
+                          <p className="text-warning-500 text-[10px] uppercase font-bold">Career % Holed</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.career_pct_holed.toFixed(1)}%</p>
+                        </div>
+                        <div className="stat-card bg-warning-950/20 border-warning-900/30">
+                          <p className="text-warning-500 text-[10px] uppercase font-bold">Career Holes</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.holed_putts_total}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="stat-card bg-warning-950/20 border-warning-900/30">
+                          <p className="text-warning-500 text-[10px] uppercase font-bold">Clutch Putts</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.clutch_putts}</p>
+                        </div>
+                        <div className="stat-card bg-warning-950/20 border-warning-900/30">
+                          <p className="text-warning-500 text-[10px] uppercase font-bold">Total Attempts</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.total_putt_attempts}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {s.sport === 'darts' && (
                     <div className="space-y-2 mt-2">
                       <div className="grid grid-cols-3 gap-2">
@@ -693,7 +718,7 @@ export default function ProfilePage() {
           </div>
 
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-            {['cricket', 'chip_off', 'golf', 'darts'].map(sport => {
+            {['cricket', 'chip_off', 'golf', 'putt_vs_putt', 'darts'].map(sport => {
               const mySportStats = currentUserStats.find(s => s.sport === sport);
               const theirSportStats = stats.find(s => s.sport === sport);
 
@@ -734,6 +759,13 @@ export default function ProfilePage() {
                         <ComparisonRow label="ATW Efficiency" val1={mySportStats?.atw_efficiency} val2={theirSportStats?.atw_efficiency} format="float" lowerIsBetter />
                         <ComparisonRow label="Lethality %" val1={mySportStats?.killer_lethality} val2={theirSportStats?.killer_lethality} format="pct" />
                         <ComparisonRow label="Avg Survival" val1={mySportStats?.killer_survival} val2={theirSportStats?.killer_survival} format="float" />
+                      </>
+                    )}
+                    {sport === 'putt_vs_putt' && (
+                      <>
+                        <ComparisonRow label="% Holed" val1={mySportStats?.career_pct_holed} val2={theirSportStats?.career_pct_holed} format="pct" />
+                        <ComparisonRow label="Career Holes" val1={mySportStats?.holed_putts_total} val2={theirSportStats?.holed_putts_total} />
+                        <ComparisonRow label="Clutch Putts" val1={mySportStats?.clutch_putts} val2={theirSportStats?.clutch_putts} />
                       </>
                     )}
                     <ComparisonRow label="Win Rate" 

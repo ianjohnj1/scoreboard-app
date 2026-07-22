@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X, Monitor } from 'lucide-react';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getSportIcon, getSportLabel } from '../lib/matches';
@@ -8,9 +8,11 @@ import { getAllProfiles } from '../lib/auth';
 import Modal from '../components/Modal';
 import QRCodeModal from '../components/QRCodeModal';
 import UserAvatar from '../components/UserAvatar';
+import HouseRulesPanel from '../components/HouseRulesPanel';
 import CricketRoom from '../components/sports/CricketRoom';
 import GolfRoom from '../components/sports/GolfRoom';
 import ChipOffRoom from '../components/sports/ChipOffRoom';
+import PvPRoom from '../components/sports/PvPRoom';
 import DartsRoom from '../components/sports/DartsRoom';
 import TableTennisRoom from '../components/sports/TableTennisRoom';
 import PoolRoom from '../components/sports/PoolRoom';
@@ -267,11 +269,6 @@ export default function MatchRoomPage() {
 
   if (!match) return null;
 
-  // --- ADD THESE LINES TO DETECT MODE ---
-  // Backyard mode check, defaulting to false if undefined
-  const isBackyard = match.house_rules?.variant === 'backyard';
-  // --------------------------------------
-
   const context: MatchContext = {
     match,
     teams,
@@ -326,6 +323,7 @@ export default function MatchRoomPage() {
             <p className="text-charcoal-500 text-xs font-mono mt-0.5">{match.room_code}</p>
           </div>
           <div className="flex items-center gap-1">
+            <HouseRulesPanel sport={match.sport} houseRules={match.house_rules} />
             <button
               onClick={() => setShowQR(true)}
               className="p-2 rounded-xl hover:bg-charcoal-700 text-charcoal-400 transition-colors"
@@ -528,6 +526,10 @@ function getSportRoom(match: MatchRoom): React.ComponentType<{ ctx: MatchContext
 
   if (sport === 'golf' && variant === 'chip_off') {
     return ChipOffRoom;
+  }
+
+  if (sport === 'golf' && variant === 'putt_vs_putt') {
+    return PvPRoom;
   }
 
   const rooms: Record<string, React.ComponentType<{ ctx: MatchContext }>> = {

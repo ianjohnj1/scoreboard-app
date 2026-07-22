@@ -1,0 +1,6 @@
+- [x] Every shared dependency named in the master build plan is classified as confirmed, renamed, missing, or still unverified based on the live codebase.
+- [x] Future-facing references to avatar, team, tooltip, layout, and comments infrastructure use the live repo reality instead of assumed names.
+- [x] The reconciled plan identifies the real extension points for setup, match rooms, spectator mode, and leaderboard/stat work.
+- [x] The reconciled plan explicitly warns where current sport implementations are not reconnect-safe or not fully live-updating for spectators.
+- [x] Auth-sensitive feature planning is aligned with the current `x-session-id`, `active_sessions`, and RLS helper model.
+- [x] No reconciled plan or child spec still treats missing infrastructure such as `InfoTooltip`, `TeamVsTeamLayout`, or `comments` as already shipped.

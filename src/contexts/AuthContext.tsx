@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useContext,
   useEffect,
@@ -55,8 +55,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const storedUser = localStorage.getItem('sk_user');
-      const storedSession = localStorage.getItem('sk_session_id');
-
       if (storedUser) {
         const storedProfile = JSON.parse(storedUser) as Profile;
         let profile = sanitizeProfile(storedProfile);

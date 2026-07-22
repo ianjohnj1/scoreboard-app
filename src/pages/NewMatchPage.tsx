@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ChevronRight, Users, User, Plus, X,
@@ -8,7 +8,10 @@ import { getAllProfiles } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import Avatar from '../components/Avatar';
-import type { Profile, MatchRoom, MatchTeam, MatchPlayer } from '../lib/supabase';
+import InfoTooltip from '../components/InfoTooltip';
+import LineupOrderBuilder from '../components/LineupOrderBuilder';
+import { getRuleDefinition } from '../data/ruleDefinitions';
+import type { Profile } from '../lib/supabase';
 
 function generateUUID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -81,16 +84,16 @@ export default function NewMatchPage() {
   const [step, setStep] = useState<Step>('sport');
   const [selectedSport, setSelectedSport] = useState('');
   const [cricketVariant, setCricketVariant] = useState<'classic' | 'backyard' | null>(null);
-  const [golfVariant, setGolfVariant] = useState<'classic' | 'chip_off' | null>(null);
+  const [golfVariant, setGolfVariant] = useState<'classic' | 'chip_off' | 'putt_vs_putt' | null>(null);
   const [dartsVariant, setDartsVariant] = useState<DartsVariant | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
 
   // Custom config
   const [customName, setCustomName] = useState('');
   const [matchTime, setMatchTime] = useState(new Date().toISOString().slice(0, 16));
-  const [customIsTeam, setCustomIsTeam] = useState(false);
-  const [customWinCondition, setCustomWinCondition] = useState<'highest' | 'lowest'>('highest');
-  const [customButtons, setCustomButtons] = useState([
+  const [customIsTeam] = useState(false);
+  const [customWinCondition] = useState<'highest' | 'lowest'>('highest');
+  const [customButtons] = useState([
     { label: '+1 Point', value: 1 },
     { label: '+5 Points', value: 5 },
   ]);
@@ -112,10 +115,10 @@ export default function NewMatchPage() {
 
   const [playerSearch, setPlayerSearch] = useState('');
   const [guestName, setGuestName] = useState('');
-  const [addingGuest, setAddingGuest] = useState(false);
+  const [, setAddingGuest] = useState(false);
   const [activeTeamPicker, setActiveTeamPicker] = useState<'team1' | 'team2' | 'individual' | null>(null);
 
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isPractice, setIsPractice] = useState(false);
 
@@ -159,10 +162,24 @@ export default function NewMatchPage() {
   }, [cricketVariant]);
   const sport = SPORTS.find(s => s.id === selectedSport);
   const dartsModeMeta = dartsVariant ? DARTS_MODE_META[dartsVariant] : null;
+  const effectiveHouseRules = {
+    ...houseRules,
+    variant:
+      selectedSport === 'cricket'
+        ? cricketVariant
+        : selectedSport === 'golf'
+          ? golfVariant
+          : selectedSport === 'darts'
+            ? dartsVariant
+            : null,
+  };
+  const isPuttVsPutt = selectedSport === 'golf' && golfVariant === 'putt_vs_putt';
   
   // Backyard mode forces an individual format setup
   // Practice mode also defaults to individual format to allow flexible multi-player "nets"
-  const isTeam = isPractice 
+  const isTeam = isPuttVsPutt
+    ? true
+    : isPractice 
     ? false 
     : selectedSport === 'custom' 
       ? customIsTeam 
@@ -199,8 +216,8 @@ export default function NewMatchPage() {
     if (!guestName.trim()) return;
     setAddingGuest(true);
     try {
-      // Generate a unique username for the guest
-      const guestUsername = `guest_${Date.now()}`;
+      // Generate a unique username for the guest using a secure random string
+      const guestUsername = `guest_${generateUUID().split('-')[0]}`;
       
       const { data: newGuest, error } = await supabase
         .from('profiles')
@@ -251,7 +268,8 @@ export default function NewMatchPage() {
     try {
       // 1. Generate IDs and Room Code
       const matchId = generateUUID();
-      const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+      // Use the first segment of a UUID for a secure 8-character room code
+      const roomCode = generateUUID().split('-')[0].toUpperCase();
 
       // 2. Insert the match record
       const { error: matchError } = await supabase
@@ -266,17 +284,16 @@ export default function NewMatchPage() {
           is_practice: isPractice,
           created_by: currentUser?.id || null,
           house_rules: {
-            ...houseRules,
-            variant:
-              selectedSport === 'cricket'
-                ? cricketVariant
-                : selectedSport === 'golf'
-                  ? golfVariant
-                  : selectedSport === 'darts'
-                    ? dartsVariant
-                    : null,
+            ...effectiveHouseRules,
             course_data: selectedSport === 'golf' && golfVariant === 'classic' ? golfCourse : null,
-            holes: selectedSport === 'golf' ? (golfVariant === 'chip_off' ? (houseRules.total_rounds as number || 9) : golfCourse.length) : null,
+            holes:
+              selectedSport === 'golf'
+                ? golfVariant === 'chip_off'
+                  ? (houseRules.total_rounds as number || 9)
+                  : golfVariant === 'putt_vs_putt'
+                    ? 2
+                    : golfCourse.length
+                : null,
           },
           custom_config: selectedSport === 'custom' ? {
             is_team: customIsTeam,
@@ -317,6 +334,7 @@ export default function NewMatchPage() {
             match_id: matchId,
             profile_id: p.id,
             team_id: team1Id,
+            lineup_order: isPuttVsPutt ? team1Players.findIndex(player => player.id === p.id) + 1 : null,
             role: 'player'
           }));
 
@@ -326,6 +344,7 @@ export default function NewMatchPage() {
             match_id: matchId,
             profile_id: p.id,
             team_id: team2Id,
+            lineup_order: isPuttVsPutt ? team2Players.findIndex(player => player.id === p.id) + 1 : null,
             role: 'player'
           }));
 
@@ -581,6 +600,29 @@ export default function NewMatchPage() {
             </div>
             <ChevronRight size={18} className="text-charcoal-500" />
           </button>
+
+          <button
+            onClick={() => {
+              setGolfVariant('putt_vs_putt');
+              setTeam1Players(activeUser ? [activeUser] : []);
+              setTeam2Players([]);
+              setIndividualPlayers([]);
+              setHouseRules({
+                starting_balls_per_team: 5,
+              });
+              setStep('config');
+            }}
+            className="w-full card p-5 flex items-center gap-4 text-left hover:border-warning-500/50 transition-all"
+          >
+            <div className="w-12 h-12 rounded-xl bg-warning-950/30 border border-warning-800 flex items-center justify-center text-2xl text-warning-400">
+              🕳️
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-charcoal-50 text-base">PvP (Putt vs Putt)</h3>
+              <p className="text-charcoal-400 text-sm mt-0.5">Two teams alternate putts into a shared pool until every ball is gone.</p>
+            </div>
+            <ChevronRight size={18} className="text-charcoal-500" />
+          </button>
         </div>
       )}
 
@@ -702,6 +744,7 @@ export default function NewMatchPage() {
                 <div className="pt-2">
                   <RuleToggle 
                     label="Practice Mode" 
+                    explanation="Practice matches are excluded from Global Leaderboards and Season Points."
                     value={isPractice} 
                     onChange={setIsPractice} 
                   />
@@ -722,12 +765,32 @@ export default function NewMatchPage() {
               
               {selectedSport === 'cricket' ? (
                 <div className="space-y-3 pt-2">
-                  <RuleToggle label="No No-Balls rule" value={houseRules.no_noballs as boolean} onChange={v => setHouseRules(prev => ({...prev, no_noballs: v}))} />
-                  <RuleToggle label="No Wide rule" value={houseRules.no_wides as boolean} onChange={v => setHouseRules(prev => ({...prev, no_wides: v}))} />
+                  <RuleToggle
+                    label="No No-Balls rule"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'no_noballs')?.explain}
+                    value={houseRules.no_noballs as boolean}
+                    onChange={v => setHouseRules(prev => ({...prev, no_noballs: v}))}
+                  />
+                  <RuleToggle
+                    label="No Wide rule"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'no_wides')?.explain}
+                    value={houseRules.no_wides as boolean}
+                    onChange={v => setHouseRules(prev => ({...prev, no_wides: v}))}
+                  />
                   {cricketVariant !== 'backyard' && (
                     <>
-                      <RuleNumber label="Max overs" value={houseRules.max_overs as number ?? 20} onChange={v => setHouseRules(prev => ({...prev, max_overs: v}))} />
-                      <RuleNumber label="Max wickets" value={houseRules.max_wickets as number ?? 10} onChange={v => setHouseRules(prev => ({...prev, max_wickets: v}))} />
+                      <RuleNumber
+                        label="Max overs"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'max_overs')?.explain}
+                        value={houseRules.max_overs as number ?? 20}
+                        onChange={v => setHouseRules(prev => ({...prev, max_overs: v}))}
+                      />
+                      <RuleNumber
+                        label="Max wickets"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'max_wickets')?.explain}
+                        value={houseRules.max_wickets as number ?? 10}
+                        onChange={v => setHouseRules(prev => ({...prev, max_wickets: v}))}
+                      />
                     </>
                   )}
                 </div>
@@ -739,8 +802,11 @@ export default function NewMatchPage() {
 
                   {dartsVariant === 'countdown' ? (
                     <div className="space-y-4">
+                      <RuleLabel
+                        label="Start Score"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'start_score')?.explain}
+                      />
                       <div className="flex items-center justify-between">
-                        <span className="text-charcoal-200 text-sm">Start Score</span>
                         <div className="flex items-center gap-2">
                           {[301, 501].map(score => (
                             <button
@@ -757,6 +823,7 @@ export default function NewMatchPage() {
                       </div>
                       <RuleToggle
                         label="Enforce Double-Out"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'double_out')?.explain}
                         value={houseRules.double_out as boolean ?? true}
                         onChange={v => setHouseRules(prev => ({ ...prev, double_out: v }))}
                       />
@@ -765,11 +832,13 @@ export default function NewMatchPage() {
                     <div className="space-y-4">
                       <RuleToggle
                         label="Skip Ahead via Multiples"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'skip_ahead_via_multiples')?.explain}
                         value={houseRules.skip_ahead_via_multiples as boolean ?? false}
                         onChange={v => setHouseRules(prev => ({ ...prev, skip_ahead_via_multiples: v }))}
                       />
                       <RuleSelect
                         label="Ring Restriction"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'ring_restriction')?.explain}
                         value={houseRules.ring_restriction as DartsRingRule ?? 'any_segment'}
                         options={[
                           { value: 'any_segment', label: 'Any Segment' },
@@ -783,6 +852,7 @@ export default function NewMatchPage() {
                     <div className="space-y-4">
                       <RuleNumber
                         label="Starting Lives"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'starting_lives')?.explain}
                         value={houseRules.starting_lives as number ?? 3}
                         min={1}
                         max={10}
@@ -790,6 +860,7 @@ export default function NewMatchPage() {
                       />
                       <RuleSelect
                         label="Target Ring to Become Killer"
+                        explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'killer_activation_ring')?.explain}
                         value={houseRules.killer_activation_ring as DartsRingRule ?? 'doubles_only'}
                         options={[
                           { value: 'any_segment', label: 'Any Segment' },
@@ -803,8 +874,11 @@ export default function NewMatchPage() {
                 </div>
               ) : selectedSport === 'golf' && golfVariant === 'classic' ? (
                 <div className="space-y-4 pt-2">
+                  <RuleLabel
+                    label="Number of Holes"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'holes')?.explain}
+                  />
                   <div className="flex items-center justify-between">
-                    <span className="text-charcoal-200 text-sm">Number of Holes</span>
                     <div className="flex items-center gap-2">
                       {[9, 11, 18].map(n => (
                         <button
@@ -873,11 +947,42 @@ export default function NewMatchPage() {
                     ))}
                   </div>
                 </div>
+              ) : selectedSport === 'golf' && golfVariant === 'putt_vs_putt' ? (
+                <div className="space-y-4 pt-2">
+                  <div className="rounded-xl border border-charcoal-700 bg-charcoal-900/50 px-3 py-3">
+                    <p className="text-sm leading-relaxed text-charcoal-400">
+                      Two teams alternate putting. Each player takes one attempt per ball remaining at the start of their turn. Every holed putt scores a point and permanently removes one ball from the pool.
+                    </p>
+                  </div>
+                  <RuleNumber
+                    label="Starting Balls"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'starting_balls_per_team')?.explain}
+                    value={houseRules.starting_balls_per_team as number ?? 5}
+                    min={1}
+                    max={10}
+                    onChange={v => setHouseRules(prev => ({ ...prev, starting_balls_per_team: v }))}
+                  />
+                </div>
               ) : selectedSport === 'golf' && golfVariant === 'chip_off' ? (
                 <div className="space-y-4 pt-2">
-                  <RuleNumber label="Balls Per Turn" value={houseRules.balls_per_turn as number ?? 3} onChange={v => setHouseRules(prev => ({...prev, balls_per_turn: v}))} />
-                  <RuleNumber label="Total Rounds" value={houseRules.total_rounds as number ?? 9} onChange={v => setHouseRules(prev => ({...prev, total_rounds: v}))} />
-                  <RuleToggle label="Hazard Penalty (-1)" value={houseRules.hazard_penalty as boolean} onChange={v => setHouseRules(prev => ({...prev, hazard_penalty: v}))} />
+                  <RuleNumber
+                    label="Balls Per Turn"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'balls_per_turn')?.explain}
+                    value={houseRules.balls_per_turn as number ?? 3}
+                    onChange={v => setHouseRules(prev => ({...prev, balls_per_turn: v}))}
+                  />
+                  <RuleNumber
+                    label="Total Rounds"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'total_rounds')?.explain}
+                    value={houseRules.total_rounds as number ?? 9}
+                    onChange={v => setHouseRules(prev => ({...prev, total_rounds: v}))}
+                  />
+                  <RuleToggle
+                    label="Hazard Penalty (-1)"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'hazard_penalty')?.explain}
+                    value={houseRules.hazard_penalty as boolean}
+                    onChange={v => setHouseRules(prev => ({...prev, hazard_penalty: v}))}
+                  />
                 </div>
               ) : (
                 <p className="text-charcoal-400 text-sm">Playing with standard configuration rules.</p>
@@ -897,6 +1002,22 @@ export default function NewMatchPage() {
               <>
                 <TeamPlayerPicker teamName={team1Name} onTeamNameChange={setTeam1Name} teamColor="#3b82f6" players={team1Players} onRemove={(id) => removePlayerFromGroup(id, 'team1')} onAdd={() => setActiveTeamPicker('team1')} />
                 <TeamPlayerPicker teamName={team2Name} onTeamNameChange={setTeam2Name} teamColor="#ef4444" players={team2Players} onRemove={(id) => removePlayerFromGroup(id, 'team2')} onAdd={() => setActiveTeamPicker('team2')} />
+                {isPuttVsPutt && (
+                  <>
+                    <LineupOrderBuilder
+                      title={`${team1Name} Lineup Order`}
+                      players={team1Players}
+                      onChange={setTeam1Players}
+                      accentColor="#3b82f6"
+                    />
+                    <LineupOrderBuilder
+                      title={`${team2Name} Lineup Order`}
+                      players={team2Players}
+                      onChange={setTeam2Players}
+                      accentColor="#ef4444"
+                    />
+                  </>
+                )}
               </>
             ) : (
               <div className="card p-4 space-y-3">
@@ -961,7 +1082,21 @@ export default function NewMatchPage() {
   );
 }
 
-function TeamPlayerPicker({ teamName, onTeamNameChange, teamColor, players, onRemove, onAdd }: any) {
+function TeamPlayerPicker({
+  teamName,
+  onTeamNameChange,
+  teamColor,
+  players,
+  onRemove,
+  onAdd,
+}: {
+  teamName: string;
+  onTeamNameChange: (value: string) => void;
+  teamColor: string;
+  players: Profile[];
+  onRemove: (id: string) => void;
+  onAdd: () => void;
+}) {
   return (
     <div className="card p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -969,14 +1104,22 @@ function TeamPlayerPicker({ teamName, onTeamNameChange, teamColor, players, onRe
         <input type="text" value={teamName} onChange={e => onTeamNameChange(e.target.value)} className="bg-transparent text-charcoal-100 font-bold focus:outline-none" />
       </div>
       <div className="flex flex-wrap gap-2">
-        {players.map((p: any) => <PlayerChip key={p.id} profile={p} onRemove={() => onRemove(p.id)} />)}
+        {players.map((p) => <PlayerChip key={p.id} profile={p} onRemove={() => onRemove(p.id)} />)}
         <button onClick={onAdd} className="px-3 py-1.5 rounded-full border border-dashed border-charcoal-600 text-charcoal-400 text-sm font-medium hover:text-accent-400 transition-colors"><Plus size={12} className="inline mr-1"/>Add</button>
       </div>
     </div>
   );
 }
 
-function PlayerChip({ profile, onRemove, locked }: any) {
+function PlayerChip({
+  profile,
+  onRemove,
+  locked,
+}: {
+  profile: Profile;
+  onRemove: () => void;
+  locked?: boolean;
+}) {
   return (
     <div className="flex items-center gap-1.5 bg-charcoal-700 rounded-full pl-1 pr-2 py-1 border border-charcoal-600">
       <Avatar name={profile.display_name} color={profile.avatar_color} size="xs" />
@@ -986,10 +1129,29 @@ function PlayerChip({ profile, onRemove, locked }: any) {
   );
 }
 
-function RuleToggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+function RuleLabel({ label, explanation }: { label: string; explanation?: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-charcoal-200 text-sm">{label}</span>
+      {explanation && <InfoTooltip content={explanation} label={`More information about ${label}`} />}
+    </div>
+  );
+}
+
+function RuleToggle({
+  label,
+  explanation,
+  value,
+  onChange,
+}: {
+  label: string;
+  explanation?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-charcoal-200 text-sm">{label}</span>
+      <RuleLabel label={label} explanation={explanation} />
       <button onClick={() => onChange(!value)} className={`relative w-12 h-6 rounded-full transition-colors ${value ? 'bg-accent-600' : 'bg-charcoal-600'}`}>
         <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${value ? 'left-6' : 'left-0.5'}`} />
       </button>
@@ -999,18 +1161,20 @@ function RuleToggle({ label, value, onChange }: { label: string; value: boolean;
 
 function RuleSelect<T extends string>({
   label,
+  explanation,
   value,
   options,
   onChange,
 }: {
   label: string;
+  explanation?: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-charcoal-200 text-sm">{label}</span>
+      <RuleLabel label={label} explanation={explanation} />
       <select
         value={value}
         onChange={e => onChange(e.target.value as T)}
@@ -1028,12 +1192,14 @@ function RuleSelect<T extends string>({
 
 function RuleNumber({
   label,
+  explanation,
   value,
   onChange,
   min = 1,
   max,
 }: {
   label: string;
+  explanation?: string;
   value: number;
   onChange: (v: number) => void;
   min?: number;
@@ -1044,7 +1210,7 @@ function RuleNumber({
 
   return (
     <div className="flex items-center justify-between">
-      <span className="text-charcoal-200 text-sm">{label}</span>
+      <RuleLabel label={label} explanation={explanation} />
       <div className="flex items-center gap-2">
         <button onClick={() => onChange(decrementValue)} className="w-8 h-8 rounded-lg bg-charcoal-700 border border-charcoal-600 text-charcoal-200 font-bold">-</button>
         <span className="w-8 text-center text-charcoal-100 font-mono font-semibold">{value}</span>

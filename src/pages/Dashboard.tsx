@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Plus, Trophy, Activity, Clock, ChevronRight,
-  QrCode, Zap, Crown, BarChart2, Trash2, RotateCcw
+  QrCode, Zap, Crown, Trash2, RotateCcw
 } from 'lucide-react';
 import UserAvatar from '../components/UserAvatar';
 import ThemeToggle from '../components/ThemeToggle';
@@ -16,7 +16,7 @@ export default function Dashboard() {
   const [activeMatches, setActiveMatches] = useState<any[]>([]);
   const [recentMatches, setRecentMatches] = useState<any[]>([]);
   const [liveActivity, setLiveActivity] = useState<any[]>([]);
-  const [topStats, setTopStats] = useState<any[]>([]);
+  const [topStats] = useState<any[]>([]);
   const [qrMatch, setQrMatch] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,9 +34,9 @@ export default function Dashboard() {
 
       if (isMounted && !isMounted()) return;
 
-      setRecentMatches(recent);
-      setActiveMatches(active);
-      setLiveActivity(live);
+      setRecentMatches((recent || []).filter(Boolean));
+      setActiveMatches((active || []).filter(Boolean));
+      setLiveActivity((live || []).filter(Boolean));
     } catch (err: any) {
       console.error("Error loading dashboard data:", err);
       if (isMounted && !isMounted()) return;
@@ -67,6 +67,9 @@ export default function Dashboard() {
     setDeletingId(matchId);
     try {
       await deleteMatch(matchId);
+      setRecentMatches(prev => prev.filter(match => match?.id !== matchId));
+      setActiveMatches(prev => prev.filter(match => match?.id !== matchId));
+      setLiveActivity(prev => prev.filter(entry => entry?.match?.id !== matchId && entry?.session?.id !== matchId));
       await loadDashboardData();
     } catch (error: any) {
       console.error("Error deleting match:", error);
@@ -319,14 +322,22 @@ function MatchCard({
   const navigate = useNavigate();
   if (!match) return null;
 
+  const sport = typeof match.sport === 'string' ? match.sport : 'custom';
+  const variant = typeof match.house_rules?.variant === 'string' ? match.house_rules.variant : undefined;
+  const customGameName = typeof match.custom_game_name === 'string' ? match.custom_game_name : null;
+  const roomCode = typeof match.room_code === 'string' && match.room_code.trim() ? match.room_code : null;
   const isLive = match.status === 'active';
-  const sportLabel = getSportLabel(match.sport || 'custom', match.custom_game_name, match.house_rules?.variant as string | undefined);
-  const sportIcon = getSportIcon(match.sport || 'custom');
+  const sportLabel = getSportLabel(sport, customGameName, variant);
+  const sportIcon = getSportIcon(sport);
+  const matchDate =
+    typeof match.match_time === 'string' && !Number.isNaN(new Date(match.match_time).getTime())
+      ? new Date(match.match_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+      : 'Unknown Date';
 
   const handleCardClick = () => {
     if (isDeleting) return;
-    if (match.room_code) {
-      navigate(`/match/${match.room_code}`);
+    if (roomCode) {
+      navigate(`/match/${roomCode}`);
     }
   };
 
@@ -345,11 +356,9 @@ function MatchCard({
           </span>
         </div>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-charcoal-500 text-xs font-mono">{match.room_code || '....'}</span>
+          <span className="text-charcoal-500 text-xs font-mono">{roomCode || '....'}</span>
           <span className="text-charcoal-600 text-xs">•</span>
-          <span className="text-charcoal-500 text-xs">
-            {match.match_time ? new Date(match.match_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown Date'}
-          </span>
+          <span className="text-charcoal-500 text-xs">{matchDate}</span>
         </div>
       </div>
       <div className="flex items-center gap-1">
@@ -376,12 +385,14 @@ function MatchCard({
                 <Trash2 size={16} />
               </button>
             )}
-            <button
-              onClick={(e) => { e.stopPropagation(); navigate(`/match/${match.room_code}`); }}
-              className="p-2 rounded-lg hover:bg-charcoal-700 text-charcoal-400 transition-colors"
-            >
-              <ChevronRight size={16} />
-            </button>
+            {roomCode && (
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/match/${roomCode}`); }}
+                className="p-2 rounded-lg hover:bg-charcoal-700 text-charcoal-400 transition-colors"
+              >
+                <ChevronRight size={16} />
+              </button>
+            )}
           </>
         )}
       </div>

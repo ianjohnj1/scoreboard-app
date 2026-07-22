@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   DARTBOARD_CENTER,
   DARTBOARD_ORDER,

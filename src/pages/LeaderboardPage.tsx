@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Trophy, Star, TrendingUp, RotateCcw, AlertCircle, Info, Target, Activity } from 'lucide-react';
+import { Trophy, RotateCcw, AlertCircle, Info, Target, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getSportLabel } from '../lib/matches';
 import { getGlobalLeaderboardData, SEASON_POINT_RULES } from '../lib/stats';
@@ -9,7 +9,16 @@ import ThemeToggle from '../components/ThemeToggle';
 import Modal from '../components/Modal';
 import type { Profile, PlayerCareerStats } from '../lib/supabase';
 
-type LeaderboardEntry = PlayerCareerStats & { profile: Profile; rankScore: number; best_sport?: string; chip_off_total_chips?: number; chip_off_scoring_chips?: number; best_score_classic?: number; best_score_chip_off?: number; };
+type LeaderboardEntry = PlayerCareerStats & {
+  profile: Profile;
+  rankScore: number;
+  best_sport?: string;
+  chip_off_total_chips?: number;
+  chip_off_scoring_chips?: number;
+  best_score_classic?: number;
+  best_score_chip_off?: number;
+  pvp_career_holes?: number;
+};
 
 export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -322,6 +331,10 @@ export default function LeaderboardPage() {
                         <div className="flex flex-col items-end min-w-[40px]">
                           <span className="text-charcoal-500 uppercase text-[8px]">HIO</span>
                           <span className="text-warning-400 font-bold">{entry.golf_lifetime_hio || 0}</span>
+                        </div>
+                        <div className="flex flex-col items-end min-w-[52px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Career Holes</span>
+                          <span className="text-accent-400 font-bold">{entry.pvp_career_holes || 0}</span>
                         </div>
                       </div>
                     );
