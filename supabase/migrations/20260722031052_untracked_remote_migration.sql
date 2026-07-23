@@ -1,0 +1,6 @@
+-- Placeholder: this version exists in the remote schema_migrations history
+-- (confirmed via `supabase migration list --linked`) but has no corresponding
+-- file in this repo - it was applied outside the local migrations folder
+-- (this project originated on Bolt.new, which manages its own migrations).
+-- Content is unknown and NOT reconstructed here; this file exists only so
+-- local/remote history line up by version number. Do not add SQL here.
