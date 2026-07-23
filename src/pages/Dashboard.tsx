@@ -323,7 +323,7 @@ export default function Dashboard() {
                 {topStats.map((stat, i) => (
                   <div
                     key={i}
-                    className="bg-charcoal-800 border border-charcoal-700 rounded-xl min-w-[140px] p-3 flex flex-col gap-2"
+                    className="card min-w-[140px] p-3 flex flex-col gap-2"
                   >
                     <div className="flex items-center gap-1">
                       <Trophy size={12} className="text-amber-400" />
@@ -364,7 +364,7 @@ export default function Dashboard() {
               const sportIcon = getSportIcon(match.sport || 'custom');
               
               return (
-                <div key={session.id} className="bg-charcoal-800 border border-charcoal-700 rounded-xl p-3 flex items-start justify-between gap-3">
+                <div key={session.id} className="card p-3 flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
                     <UserAvatar
                       display_name={profile.display_name || 'Player'}
@@ -515,7 +515,7 @@ function MatchCard({
   };
 
   return (
-    <div className={`bg-charcoal-800 border border-charcoal-700 rounded-xl p-3 flex items-center gap-3 hover:border-charcoal-600 transition-all duration-150 ${isDeleting ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
+    <div className={`card p-3 flex items-center gap-3 ${isDeleting ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
       <div className="w-10 h-10 rounded-xl bg-charcoal-700 flex items-center justify-center text-xl flex-shrink-0">
         {sportIcon}
       </div>
