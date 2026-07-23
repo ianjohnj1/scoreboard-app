@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, getSportIcon, getSportLabel } from '../lib/matches';
-import { supabase } from '../lib/supabase';
+import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import CricketRoom from '../components/sports/CricketRoom';
 import GolfRoom from '../components/sports/GolfRoom';
 import DartsRoom from '../components/sports/DartsRoom';
@@ -48,8 +48,8 @@ export default function SpectatorPage() {
 
     const pids = [...new Set(p.map((mp: MatchPlayer) => mp.profile_id))];
     if (pids.length > 0) {
-      const { data } = await supabase.from('profiles').select('*').in('id', pids);
-      setProfiles(new Map((data || []).map((pr: Profile) => [pr.id, pr])));
+      const { data } = await supabase.from('profiles').select(SAFE_PROFILE_COLUMNS).in('id', pids);
+      setProfiles(new Map((data || []).map((pr) => [pr.id, { ...pr, pin_hash: null } as Profile])));
     }
     setLoading(false);
   }, [roomCode]);

@@ -11,6 +11,7 @@ import UserAvatar from '../components/UserAvatar';
 import Modal from '../components/Modal';
 import ThemeToggle from '../components/ThemeToggle';
 import type { Profile, PlayerCareerAnalytics } from '../lib/supabase';
+import { SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 
 export default function ProfilePage() {
   const { id } = useParams<{ id?: string }>();
@@ -46,12 +47,12 @@ export default function ProfilePage() {
       
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select(SAFE_PROFILE_COLUMNS)
         .eq('id', id)
         .single();
-        
+
       if (!error && data) {
-        setTargetProfile(data);
+        setTargetProfile({ ...data, pin_hash: null });
       }
     };
     loadProfile();
@@ -96,13 +97,14 @@ export default function ProfilePage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', currentUser.id)
-        .select('*')
+        .select(SAFE_PROFILE_COLUMNS)
         .single();
-      
+
       if (error) throw error;
       if (updatedProfile) {
-        syncCurrentUser(updatedProfile);
-        setTargetProfile(updatedProfile);
+        const safeProfile = { ...updatedProfile, pin_hash: null };
+        syncCurrentUser(safeProfile);
+        setTargetProfile(safeProfile);
       }
       setShowSettingsModal(false);
     } catch (err) {
@@ -149,13 +151,14 @@ export default function ProfilePage() {
         .from('profiles')
         .update({ avatar_url: publicUrl })
         .eq('id', currentUser.id)
-        .select('*')
+        .select(SAFE_PROFILE_COLUMNS)
         .single();
 
       if (updateError) throw updateError;
       if (updatedProfile) {
-        syncCurrentUser(updatedProfile);
-        setTargetProfile(updatedProfile);
+        const safeProfile = { ...updatedProfile, pin_hash: null };
+        syncCurrentUser(safeProfile);
+        setTargetProfile(safeProfile);
       }
     } catch (err: any) {
       console.error("Error uploading avatar:", err);

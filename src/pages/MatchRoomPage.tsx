@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X, Monitor } from 'lucide-react';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getSportIcon, getSportLabel } from '../lib/matches';
-import { supabase } from '../lib/supabase';
+import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { getAllProfiles } from '../lib/auth';
 import Modal from '../components/Modal';
@@ -100,12 +100,12 @@ export default function MatchRoomPage() {
       if (pids.length > 0) {
         const { data } = await supabase
           .from('profiles')
-          .select('*')
+          .select(SAFE_PROFILE_COLUMNS)
           .in('id', pids);
-        
+
         if (isMounted && !isMounted()) return;
 
-        const map = new Map((data || []).map((pr: Profile) => [pr.id, pr]));
+        const map = new Map((data || []).map((pr) => [pr.id, { ...pr, pin_hash: null } as Profile]));
         setProfiles(map);
       }
     } catch (error: any) {
@@ -240,7 +240,7 @@ export default function MatchRoomPage() {
           avatar_color: '#f59e0b',
           is_guest: true
         }])
-        .select()
+        .select('id')
         .single();
 
       if (error) throw error;

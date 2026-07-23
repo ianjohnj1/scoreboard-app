@@ -25,6 +25,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// profiles.pin_hash is not readable by anon/authenticated (see
+// 20260723_rls_lockdown_step3.sql) - every SELECT/RETURNING against profiles
+// must enumerate columns explicitly rather than use '*'/bare select(), since
+// Postgres expands '*' to every column and fails wholesale if any one of them
+// isn't granted.
+export const SAFE_PROFILE_COLUMNS =
+  'id, username, display_name, is_guest, is_admin, avatar_color, avatar_url, catchphrase, linked_profile_id, created_at, updated_at';
+
 export type Profile = {
   id: string;
   username: string | null;

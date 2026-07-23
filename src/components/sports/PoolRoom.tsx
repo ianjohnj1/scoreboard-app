@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { recordEvent } from '../../lib/matches';
+import { supabase } from '../../lib/supabase';
 import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
@@ -7,6 +8,25 @@ import type { Profile } from '../../lib/supabase';
 export default function PoolRoom({ ctx }: { ctx: MatchContext }) {
   const { match, teams, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const [frames, setFrames] = useState<[number, number]>([0, 0]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('match_events')
+      .select('event_data')
+      .eq('match_id', match.id)
+      .eq('event_type', 'pool_frame')
+      .eq('is_undone', false)
+      .order('sequence_num', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const latest = data?.[0]?.event_data as { frames?: [number, number] } | undefined;
+        if (latest?.frames) setFrames(latest.frames);
+      });
+    return () => { cancelled = true; };
+  }, [match.id]);
+
   const t0 = teams[0]?.team_name || 'Player 1';
   const t1 = teams[1]?.team_name || 'Player 2';
   const teamProfiles = teams.map(team =>

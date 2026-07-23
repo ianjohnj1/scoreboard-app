@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { recordEvent } from '../../lib/matches';
+import { supabase } from '../../lib/supabase';
 import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
@@ -11,6 +12,22 @@ export default function CardsRoom({ ctx }: { ctx: MatchContext }) {
   const [rounds, setRounds] = useState<Record<string, number>[]>([]);
   const [tempRound, setTempRound] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('match_events')
+      .select('event_data')
+      .eq('match_id', match.id)
+      .eq('event_type', 'cards_round')
+      .eq('is_undone', false)
+      .order('sequence_num', { ascending: true })
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        setRounds(data.map(row => (row.event_data as { round: Record<string, number> }).round));
+      });
+    return () => { cancelled = true; };
+  }, [match.id]);
 
   const totals = matchPlayers.reduce<Record<string, number>>((acc, p) => {
     acc[p.id] = rounds.reduce((s, r) => s + (r[p.id] || 0), 0);

@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, SAFE_PROFILE_COLUMNS } from './supabase';
 
 export const SEASON_POINT_RULES = {
   placement: [
@@ -672,7 +672,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
   const [{ data: players }, { data: events }, { data: profiles }, { data: cricketStats }] = await Promise.all([
     supabase.from('match_players').select('*').in('match_id', matchIds),
     supabase.from('match_events').select('*').in('match_id', matchIds).eq('is_undone', false),
-    supabase.from('profiles').select('*'),
+    supabase.from('profiles').select(SAFE_PROFILE_COLUMNS),
     supabase.from('cricket_player_stats').select('*').in('match_id', matchIds)
   ]);
 

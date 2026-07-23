@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { recordEvent } from '../../lib/matches';
+import { supabase } from '../../lib/supabase';
 import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
@@ -7,6 +8,25 @@ import type { Profile } from '../../lib/supabase';
 export default function BasketballRoom({ ctx }: { ctx: MatchContext }) {
   const { match, teams, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const [scores, setScores] = useState<[number, number]>([0, 0]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('match_events')
+      .select('event_data')
+      .eq('match_id', match.id)
+      .eq('event_type', 'bball_score')
+      .eq('is_undone', false)
+      .order('sequence_num', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const latest = data?.[0]?.event_data as { scores?: [number, number] } | undefined;
+        if (latest?.scores) setScores(latest.scores);
+      });
+    return () => { cancelled = true; };
+  }, [match.id]);
+
   const teamProfiles = teams.map(team =>
     players
       .filter(player => player.team_id === team?.id)

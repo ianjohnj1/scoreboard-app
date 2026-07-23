@@ -12,6 +12,7 @@ import InfoTooltip from '../components/InfoTooltip';
 import LineupOrderBuilder from '../components/LineupOrderBuilder';
 import { getRuleDefinition } from '../data/ruleDefinitions';
 import type { Profile } from '../lib/supabase';
+import { SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 
 function generateUUID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -229,14 +230,15 @@ export default function NewMatchPage() {
             is_guest: true
           }
         ])
-        .select()
+        .select(SAFE_PROFILE_COLUMNS)
         .single();
 
       if (error) throw error;
 
       if (newGuest) {
-        setProfiles(prev => [...prev, newGuest]);
-        if (activeTeamPicker) addPlayerToGroup(newGuest, activeTeamPicker);
+        const safeGuest = { ...newGuest, pin_hash: null };
+        setProfiles(prev => [...prev, safeGuest]);
+        if (activeTeamPicker) addPlayerToGroup(safeGuest, activeTeamPicker);
         setGuestName('');
       }
     } catch (err) {

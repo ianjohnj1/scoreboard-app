@@ -1,7 +1,10 @@
 import { supabase } from './supabase';
 import type { Profile } from './supabase';
+import { SAFE_PROFILE_COLUMNS } from './supabase';
 
-// Simple PIN hashing (deterministic, client-side)
+// Kept only for linkGuestAccount()'s client-driven update path; login/signup now
+// verify PINs server-side via rpc_login/rpc_signup so the plaintext PIN never needs
+// to be hashed (or the hash compared) by client code for those flows.
 export async function hashPin(pin: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(`scorekeeper:${pin}:salt2024`);
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -9,27 +12,21 @@ export async function hashPin(pin: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+export type ProfileWithSession = Profile & { session_id: string };
+
 export async function createUser(
   displayName: string,
   pin: string,
-  username: string,
-  isAdmin = false
-): Promise<Profile | null> {
-  const pin_hash = await hashPin(pin);
-  const { data, error } = await supabase
-    .from('profiles')
-    .insert({
-      display_name: displayName,
-      username: username.toLowerCase().trim(),
-      pin_hash,
-      is_guest: false,
-      is_admin: isAdmin,
-      avatar_color: randomAvatarColor(),
-    })
-    .select()
-    .single();
+  username: string
+): Promise<ProfileWithSession | null> {
+  const { data, error } = await supabase.rpc('rpc_signup', {
+    p_display_name: displayName,
+    p_pin: pin,
+    p_username: username,
+  });
   if (error) throw error;
-  return data;
+  const row = data?.[0];
+  return row ? { ...row, pin_hash: null } : null;
 }
 
 export async function createGuestProfile(displayName: string): Promise<Profile> {
@@ -41,46 +38,38 @@ export async function createGuestProfile(displayName: string): Promise<Profile> 
       is_admin: false,
       avatar_color: randomAvatarColor(),
     })
-    .select()
+    .select(SAFE_PROFILE_COLUMNS)
     .single();
   if (error) throw error;
-  return data;
+  return { ...data, pin_hash: null };
 }
 
-export async function loginWithPin(username: string, pin: string): Promise<Profile | null> {
-  const pin_hash = await hashPin(pin);
-  const { data } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('username', username.toLowerCase().trim())
-    .eq('pin_hash', pin_hash)
-    .eq('is_guest', false)
-    .maybeSingle();
-  if (data) {
-    await supabase
-      .from('profiles')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', data.id);
-  }
-  return data;
+export async function loginWithPin(username: string, pin: string): Promise<ProfileWithSession | null> {
+  const { data, error } = await supabase.rpc('rpc_login', {
+    p_username: username,
+    p_pin: pin,
+  });
+  if (error) throw error;
+  const row = data?.[0];
+  return row ? { ...row, pin_hash: null } : null;
 }
 
 export async function getAllProfiles(): Promise<Profile[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(SAFE_PROFILE_COLUMNS)
     .order('display_name');
   if (error) throw error;
-  return data || [];
+  return (data || []).map(p => ({ ...p, pin_hash: null }));
 }
 
 export async function getProfileById(id: string): Promise<Profile | null> {
   const { data } = await supabase
     .from('profiles')
-    .select('*')
+    .select(SAFE_PROFILE_COLUMNS)
     .eq('id', id)
     .maybeSingle();
-  return data;
+  return data ? { ...data, pin_hash: null } : null;
 }
 
 export async function linkGuestAccount(
@@ -100,10 +89,10 @@ export async function linkGuestAccount(
       updated_at: new Date().toISOString(),
     })
     .eq('id', guestId)
-    .select()
+    .select(SAFE_PROFILE_COLUMNS)
     .single();
   if (error) throw error;
-  return data;
+  return { ...data, pin_hash: null };
 }
 
 export function randomAvatarColor(): string {

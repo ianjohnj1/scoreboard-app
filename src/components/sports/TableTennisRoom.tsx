@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { recordEvent } from '../../lib/matches';
+import { supabase } from '../../lib/supabase';
 import UserAvatar from '../UserAvatar';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type { Profile } from '../../lib/supabase';
@@ -22,6 +23,40 @@ export default function TableTennisRoom({ ctx }: { ctx: MatchContext }) {
   const p1 = isTeam ? teams[1] : individualPlayers[1];
 
   const [state, setState] = useState<TTState>({ scores: [0, 0], sets: [0, 0], serving: 0 });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [{ data: setRows }, { data: pointRows }] = await Promise.all([
+        supabase
+          .from('match_events')
+          .select('event_data, sequence_num')
+          .eq('match_id', match.id)
+          .eq('event_type', 'tt_set')
+          .eq('is_undone', false)
+          .order('sequence_num', { ascending: false })
+          .limit(1),
+        supabase
+          .from('match_events')
+          .select('event_data, sequence_num')
+          .eq('match_id', match.id)
+          .eq('event_type', 'tt_point')
+          .eq('is_undone', false)
+          .order('sequence_num', { ascending: false })
+          .limit(1),
+      ]);
+      if (cancelled) return;
+
+      const latestSet = setRows?.[0] as { event_data: { sets?: [number, number] }; sequence_num: number } | undefined;
+      const latestPoint = pointRows?.[0] as { event_data: { score?: [number, number] }; sequence_num: number } | undefined;
+      const sets = (latestSet?.event_data.sets ?? [0, 0]) as [number, number];
+      const scoresAreCurrent = latestPoint && (!latestSet || latestPoint.sequence_num > latestSet.sequence_num);
+      const scores = (scoresAreCurrent ? latestPoint!.event_data.score : undefined) ?? [0, 0];
+
+      setState({ scores: scores as [number, number], sets, serving: (sets[0] + sets[1]) % 2 });
+    })();
+    return () => { cancelled = true; };
+  }, [match.id]);
 
   const addPoint = async (idx: 0 | 1) => {
     const newScores: [number, number] = [...state.scores] as [number, number];

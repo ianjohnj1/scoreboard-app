@@ -13,7 +13,7 @@ type AuthContextType = {
   sessionId: string | null;
   loading: boolean;
   connectionError: boolean;
-  login: (profile: Profile) => Promise<void>;
+  login: (profile: Profile, sessionId: string) => Promise<void>;
   logout: () => Promise<void>;
   retryConnection: () => Promise<void>;
   syncCurrentUser: (profile: Profile) => void;
@@ -47,58 +47,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Perform a lightweight "ping" to verify DNS/Connectivity
       const { error: pingError } = await supabase
         .from('profiles')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .limit(1);
       
       if (pingError && (pingError.message?.includes('Failed to fetch') || pingError.code === 'PGRST301')) {
         throw new Error('Supabase unreachable');
       }
 
-      const storedUser = localStorage.getItem('sk_user');
-      if (storedUser) {
-        const storedProfile = JSON.parse(storedUser) as Profile;
-        let profile = sanitizeProfile(storedProfile);
+      // The session id is the sole source of truth across reloads - it's opaque
+      // and can't be forged into pointing at someone else's profile. We never try
+      // to "recover" a session from a cached profile id anymore (that was the
+      // session-forgery hole: anyone could fake sk_user and inherit a live session).
+      const storedSessionId = localStorage.getItem('sk_session_id');
+      if (storedSessionId) {
+        const { data, error: resumeError } = await supabase.rpc('rpc_resume_session');
+        const row = data?.[0];
 
-        if (storedProfile.id) {
-          const { data: latestProfile, error: profileError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', storedProfile.id)
-            .single();
-
-          if (!profileError && latestProfile) {
-            profile = sanitizeProfile(latestProfile);
-          }
-        }
-
-        setCurrentUser(profile);
-        localStorage.setItem('sk_user', JSON.stringify(profile));
-        
-        if (profile.id) {
-          const { data: session } = await supabase
-            .from('active_sessions')
-            .select('id')
-            .eq('profile_id', profile.id)
-            .maybeSingle();
-
-          if (session) {
-            setSessionId(session.id);
-            localStorage.setItem('sk_session_id', session.id);
-          } else {
-            const { data: newSession } = await supabase
-              .from('active_sessions')
-              .insert({
-                profile_id: profile.id,
-                last_seen: new Date().toISOString(),
-              })
-              .select()
-              .single();
-
-            if (newSession) {
-              setSessionId(newSession.id);
-              localStorage.setItem('sk_session_id', newSession.id);
-            }
-          }
+        if (!resumeError && row) {
+          const profile = sanitizeProfile({ ...row, pin_hash: null } as Profile);
+          setCurrentUser(profile);
+          setSessionId(storedSessionId);
+          localStorage.setItem('sk_user', JSON.stringify(profile));
+        } else {
+          localStorage.removeItem('sk_user');
+          localStorage.removeItem('sk_session_id');
         }
       }
     } catch (err: any) {
@@ -121,39 +93,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await initializeAuth();
   }, [initializeAuth]);
 
-  const login = useCallback(async (profile: Profile) => {
+  const login = useCallback(async (profile: Profile, newSessionId: string) => {
     syncCurrentUser(profile);
-
-    // Create/update active session
-    const { data: existing } = await supabase
-      .from('active_sessions')
-      .select('id')
-      .eq('profile_id', profile.id)
-      .maybeSingle();
-
-    if (existing) {
-      await supabase
-        .from('active_sessions')
-        .update({ last_seen: new Date().toISOString() })
-        .eq('id', existing.id);
-
-      setSessionId(existing.id);
-      localStorage.setItem('sk_session_id', existing.id);
-    } else {
-      const { data } = await supabase
-        .from('active_sessions')
-        .insert({
-          profile_id: profile.id,
-          last_seen: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (data) {
-        setSessionId(data.id);
-        localStorage.setItem('sk_session_id', data.id);
-      }
-    }
+    setSessionId(newSessionId);
+    localStorage.setItem('sk_session_id', newSessionId);
   }, [syncCurrentUser]);
 
   const logout = useCallback(async () => {
