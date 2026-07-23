@@ -2,6 +2,19 @@ import { supabase } from './supabase';
 import type { MatchRoom, MatchTeam, MatchPlayer } from './supabase';
 import { updateCareerStats } from './stats';
 
+// A match that hasn't seen any status/score updates in this long is likely abandoned
+// rather than genuinely still being played.
+export const STALE_MATCH_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+export function isMatchStale(match: Pick<MatchRoom, 'status' | 'updated_at' | 'created_at'>): boolean {
+  if (!match || match.status !== 'active') return false;
+  const reference = match.updated_at || match.created_at;
+  if (!reference) return false;
+  const referenceTime = new Date(reference).getTime();
+  if (Number.isNaN(referenceTime)) return false;
+  return Date.now() - referenceTime > STALE_MATCH_THRESHOLD_MS;
+}
+
 export async function getMatchByCode(code: string): Promise<MatchRoom | null> {
   const { data, error } = await supabase
     .from('match_rooms')
@@ -209,6 +222,8 @@ export async function deleteMatch(matchId: string): Promise<void> {
 }
 
 export async function getLiveActivity(): Promise<any[]> {
+  const staleCutoff = new Date(Date.now() - STALE_MATCH_THRESHOLD_MS).toISOString();
+
   const { data, error } = await supabase
     .from('match_rooms')
     .select(`
@@ -216,6 +231,7 @@ export async function getLiveActivity(): Promise<any[]> {
       created_by_profile:profiles!match_rooms_created_by_fkey(display_name, avatar_color, avatar_url)
     `)
     .eq('status', 'active')
+    .gte('updated_at', staleCutoff)
     .order('created_at', { ascending: false })
     .limit(5);
   

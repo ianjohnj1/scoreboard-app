@@ -414,13 +414,14 @@ export default function Dashboard() {
               {activeMatches.map(match => {
                 if (!match) return null;
                 return (
-                  <MatchCard 
-                    key={match.id} 
-                    match={match} 
-                    onQR={() => setQrMatch(match)} 
+                  <MatchCard
+                    key={match.id}
+                    match={match}
+                    onQR={() => setQrMatch(match)}
                     onDelete={() => setConfirmDeleteId(match.id)}
                     canDelete={isAdmin}
                     isDeleting={deletingId === match.id}
+                    hideLiveBadge
                   />
                 );
               })}
@@ -485,10 +486,11 @@ export default function Dashboard() {
   );
 }
 
-function MatchCard({ 
-  match, onQR, onDelete, canDelete, isDeleting 
-}: { 
-  match: any; onQR: () => void; onDelete: () => void; canDelete: boolean; isDeleting: boolean 
+function MatchCard({
+  match, onQR, onDelete, canDelete, isDeleting, hideLiveBadge
+}: {
+  match: any; onQR: () => void; onDelete: () => void; canDelete: boolean; isDeleting: boolean;
+  hideLiveBadge?: boolean;
 }) {
   const navigate = useNavigate();
   if (!match) return null;
@@ -522,9 +524,11 @@ function MatchCard({
           <span className="font-semibold text-charcoal-100 text-sm truncate">
             {sportLabel}
           </span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isLive ? 'bg-emerald-950 text-emerald-400' : 'bg-charcoal-700 text-charcoal-400'}`}>
-            {isLive ? 'Live' : 'Done'}
-          </span>
+          {!(hideLiveBadge && isLive) && (
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isLive ? 'bg-emerald-950 text-emerald-400' : 'bg-charcoal-700 text-charcoal-400'}`}>
+              {isLive ? 'Live' : 'Done'}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-charcoal-500 text-xs font-mono">{roomCode || '....'}</span>
