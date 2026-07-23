@@ -457,10 +457,19 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
           pid = players[playerIdx]?.profile_id;
         }
 
+        if (!pid && e.team_id) {
+          // Attribute to all players in the team if no specific player is identified
+          const teamPlayers = players.filter(p => p.team_id === e.team_id);
+          teamPlayers.forEach(tp => {
+            updatePlayerStats(tp.profile_id, e);
+          });
+          return;
+        }
+
         if (!pid && e.event_data?.team !== undefined) {
-          // Basketball or generic team index
+          // Basketball or generic team index, for events recorded without a team_id column
           const teamIdx = e.event_data.team as number;
-          const teamId = match.winner_team_id || (teams && teams[teamIdx]?.id); 
+          const teamId = teams && teams[teamIdx]?.id;
           if (teamId) {
             // Attribute to all players in that team for career stats
             const teamPlayers = players.filter(p => p.team_id === teamId);
@@ -469,15 +478,6 @@ export async function aggregateMatchStats(matchId: string): Promise<MatchStats[]
             });
             return;
           }
-        }
-
-        if (!pid && e.team_id) {
-          // Attribute to all players in the team if no specific player is identified
-          const teamPlayers = players.filter(p => p.team_id === e.team_id);
-          teamPlayers.forEach(tp => {
-            updatePlayerStats(tp.profile_id, e);
-          });
-          return;
         }
 
         if (pid) {
@@ -684,6 +684,7 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
     const key = `${profileId}:${sport}`;
     if (!globalStats.has(key)) {
       globalStats.set(key, {
+        id: key,
         profile_id: profileId,
         sport,
         profile: profileMap.get(profileId),
@@ -844,12 +845,9 @@ export async function getGlobalLeaderboardData(): Promise<any[]> {
         if (!pid && e.event_data?.player !== undefined) {
           pid = matchPlayers[e.event_data.player as number]?.profile_id;
         }
-        if (!pid && e.event_data?.team !== undefined) {
-          const teamId = match.winner_team_id; // Simple heuristic
-          if (teamId) {
-            matchPlayers.filter(p => p.team_id === teamId).forEach(tp => updateLocalPlayerStats(tp.profile_id, e));
-            return;
-          }
+        if (!pid && e.team_id) {
+          matchPlayers.filter(p => p.team_id === e.team_id).forEach(tp => updateLocalPlayerStats(tp.profile_id, e));
+          return;
         }
         if (pid) updateLocalPlayerStats(pid, e);
       });

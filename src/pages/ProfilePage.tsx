@@ -35,6 +35,7 @@ export default function ProfilePage() {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [currentUserStats, setCurrentUserStats] = useState<PlayerCareerAnalytics[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
+  const [isFanBoy, setIsFanBoy] = useState(false);
 
   const isOwnProfile = !id || id === currentUser?.id;
 
@@ -57,6 +58,20 @@ export default function ProfilePage() {
     };
     loadProfile();
   }, [id, currentUser]);
+
+  useEffect(() => {
+    const profileId = targetProfile?.id;
+    if (!profileId) { setIsFanBoy(false); return; }
+    (async () => {
+      const { data } = await supabase
+        .from('fan_engagement_stats')
+        .select('profile_id')
+        .order('total_engagement', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setIsFanBoy(!!data && data.profile_id === profileId);
+    })();
+  }, [targetProfile?.id]);
 
   const loadStats = useCallback(async (isMounted?: () => boolean) => {
     const profileId = id || currentUser?.id;
@@ -280,6 +295,7 @@ export default function ProfilePage() {
               <div className="flex items-center gap-2 min-w-0 flex-wrap">
                 <h1 className="text-xl font-bold text-charcoal-50 truncate">{targetProfile.display_name}</h1>
                 {targetProfile.is_admin && <span className="pill-admin">Admin</span>}
+                {isFanBoy && <span className="pill-fanboy">🏆 FanBoy</span>}
               </div>
               {targetProfile.username && (
                 <p className="text-charcoal-400 text-sm truncate">@{targetProfile.username}</p>

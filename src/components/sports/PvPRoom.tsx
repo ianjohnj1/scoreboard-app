@@ -261,7 +261,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
     if (teamRuntime.length === 2 && matchIsTied) {
       setShowTieBreaker(true);
     }
-  }, [canInteract, match.id, matchIsTied, onRefresh, remainingPool, teamRuntime, tieBreakResult]);
+  }, [canInteract, match.id, match.status, matchIsTied, onRefresh, remainingPool, teamRuntime, tieBreakResult]);
 
   const handleAttempt = async (outcome: 'holed' | 'missed') => {
     if (!canInteract || !activeTeam || !activePlayer || remainingPool === 0) return;

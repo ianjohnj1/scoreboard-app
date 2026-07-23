@@ -73,6 +73,38 @@ export function overrideKillerTargets(
   };
 }
 
+export function addPlayerToKillerState(
+  state: DartsRuntimeState,
+  playerId: string,
+  rules: KillerRules
+): DartsRuntimeState {
+  const killerState = state.killer;
+  if (!killerState || killerState.players[playerId] !== undefined) return state;
+
+  const usedTargets = new Set(Object.values(killerState.players).map(p => p.targetNumber));
+  const allNumbers = Array.from({ length: 20 }, (_, index) => index + 1);
+  const unused = allNumbers.filter(number => !usedTargets.has(number));
+  const targetNumber = unused.length > 0
+    ? unused[Math.floor(Math.random() * unused.length)]
+    : allNumbers[Math.floor(Math.random() * allNumbers.length)];
+
+  return {
+    ...state,
+    killer: {
+      ...killerState,
+      players: {
+        ...killerState.players,
+        [playerId]: {
+          targetNumber,
+          lives: rules.startingLives,
+          isKiller: false,
+          isEliminated: false,
+        },
+      },
+    },
+  };
+}
+
 function getNextActivePlayerIndex(state: DartsRuntimeState, playersOrder: string[]) {
   if (!state.killer) return state.currentPlayerIdx;
   for (let offset = 1; offset <= playersOrder.length; offset += 1) {

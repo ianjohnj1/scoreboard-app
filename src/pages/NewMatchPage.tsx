@@ -122,6 +122,7 @@ export default function NewMatchPage() {
   const [, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isPractice, setIsPractice] = useState(false);
+  const [commentsEnabled, setCommentsEnabled] = useState(true);
 
   const activeUser = currentUser;
 
@@ -287,6 +288,7 @@ export default function NewMatchPage() {
           created_by: currentUser?.id || null,
           house_rules: {
             ...effectiveHouseRules,
+            comments_enabled: commentsEnabled,
             course_data: selectedSport === 'golf' && golfVariant === 'classic' ? golfCourse : null,
             holes:
               selectedSport === 'golf'
@@ -744,13 +746,22 @@ export default function NewMatchPage() {
                   />
                 </div>
                 <div className="pt-2">
-                  <RuleToggle 
-                    label="Practice Mode" 
+                  <RuleToggle
+                    label="Practice Mode"
                     explanation="Practice matches are excluded from Global Leaderboards and Season Points."
-                    value={isPractice} 
-                    onChange={setIsPractice} 
+                    value={isPractice}
+                    onChange={setIsPractice}
                   />
                   <p className="text-[10px] text-charcoal-500 mt-1 uppercase font-bold tracking-wider">Practice matches are excluded from Global Leaderboards & SP.</p>
+                </div>
+                <div className="pt-2">
+                  <RuleToggle
+                    label="Comments & Cheers"
+                    explanation="Lets spectators post live comments and one-tap cheer reactions in the spectator room."
+                    value={commentsEnabled}
+                    onChange={setCommentsEnabled}
+                  />
+                  <p className="text-[10px] text-charcoal-500 mt-1 uppercase font-bold tracking-wider">Turn off for a quieter room, e.g. a serious tournament final.</p>
                 </div>
               </div>
             </div>

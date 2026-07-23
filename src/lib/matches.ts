@@ -39,8 +39,9 @@ export async function getMatchPlayers(matchId: string): Promise<MatchPlayer[]> {
   const { data, error } = await supabase
     .from('match_players')
     .select('*')
-    .eq('match_id', matchId);
-  
+    .eq('match_id', matchId)
+    .order('batting_order', { ascending: true, nullsFirst: false });
+
   if (error) throw error;
   return data || [];
 }
@@ -150,6 +151,12 @@ export async function deleteMatch(matchId: string): Promise<void> {
       {
         label: 'match_events',
         run: async () => await supabase.from('match_events').delete().eq('match_id', matchId),
+      },
+      {
+        // comments is polymorphic (context_type/context_id) so it has no FK
+        // to match_rooms and no DB-level cascade - must clean up explicitly.
+        label: 'comments',
+        run: async () => await supabase.from('comments').delete().eq('context_type', 'match').eq('context_id', matchId),
       },
       {
         label: 'cricket_player_stats',

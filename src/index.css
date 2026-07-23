@@ -147,6 +147,10 @@
     @apply pill bg-danger-600/20 text-danger-400 border border-danger-600/30;
   }
 
+  .pill-fanboy {
+    @apply pill bg-accent-600/20 text-accent-400 border border-accent-600/30;
+  }
+
   .nav-tab {
     @apply flex-1 flex flex-col items-center justify-center gap-0.5 py-2
            text-charcoal-400 transition-colors duration-150 relative;
@@ -238,6 +242,16 @@
 
   .animate-dartboard-menu {
     animation: dartboard-menu-pop 0.16s ease-out;
+  }
+
+  @keyframes cheer-burst {
+    0% { transform: translateY(0) scale(0.6); opacity: 0; }
+    30% { transform: translateY(-8px) scale(1.2); opacity: 1; }
+    100% { transform: translateY(-48px) scale(1); opacity: 0; }
+  }
+
+  .animate-cheer-burst {
+    animation: cheer-burst 0.9s ease-out forwards;
   }
 }
 

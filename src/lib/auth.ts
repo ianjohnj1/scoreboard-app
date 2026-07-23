@@ -29,21 +29,6 @@ export async function createUser(
   return row ? { ...row, pin_hash: null } : null;
 }
 
-export async function createGuestProfile(displayName: string): Promise<Profile> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .insert({
-      display_name: displayName.trim(),
-      is_guest: true,
-      is_admin: false,
-      avatar_color: randomAvatarColor(),
-    })
-    .select(SAFE_PROFILE_COLUMNS)
-    .single();
-  if (error) throw error;
-  return { ...data, pin_hash: null };
-}
-
 export async function loginWithPin(username: string, pin: string): Promise<ProfileWithSession | null> {
   const { data, error } = await supabase.rpc('rpc_login', {
     p_username: username,
@@ -61,15 +46,6 @@ export async function getAllProfiles(): Promise<Profile[]> {
     .order('display_name');
   if (error) throw error;
   return (data || []).map(p => ({ ...p, pin_hash: null }));
-}
-
-export async function getProfileById(id: string): Promise<Profile | null> {
-  const { data } = await supabase
-    .from('profiles')
-    .select(SAFE_PROFILE_COLUMNS)
-    .eq('id', id)
-    .maybeSingle();
-  return data ? { ...data, pin_hash: null } : null;
 }
 
 export async function linkGuestAccount(
@@ -93,15 +69,6 @@ export async function linkGuestAccount(
     .single();
   if (error) throw error;
   return { ...data, pin_hash: null };
-}
-
-export function randomAvatarColor(): string {
-  const colors = [
-    '#3b82f6', '#10b981', '#f97316', '#ef4444',
-    '#8b5cf6', '#06b6d4', '#f59e0b', '#ec4899',
-    '#14b8a6', '#84cc16',
-  ];
-  return colors[Math.floor(Math.random() * colors.length)];
 }
 
 export function getInitials(name: string): string {

@@ -1,8 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Clock, Trophy, User } from 'lucide-react';
+import { Home, Clock, Trophy, User, Calendar } from 'lucide-react';
 
 const NAV_ITEMS = [
   { path: '/', icon: Home, label: 'Home' },
+  { path: '/events', icon: Calendar, label: 'Events' },
   { path: '/history', icon: Clock, label: 'History' },
   { path: '/leaderboard', icon: Trophy, label: 'Leaders' },
   { path: '/profile', icon: User, label: 'Profile' },

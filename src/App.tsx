@@ -13,6 +13,9 @@ import HistoryPage from './pages/HistoryPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import ProfilePage from './pages/ProfilePage';
 import AboutPage from './pages/AboutPage';
+import NewEventPage from './pages/NewEventPage';
+import EventDetailPage from './pages/EventDetailPage';
+import EventsListPage from './pages/EventsListPage';
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { currentUser, loading } = useAuth();
@@ -102,6 +105,42 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <MatchRoomPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/events"
+          element={
+            <ProtectedRoute>
+              <EventsListPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/events/new"
+          element={
+            <ProtectedRoute>
+              <NewEventPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/events/:id/edit"
+          element={
+            <ProtectedRoute>
+              <NewEventPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/events/:id"
+          element={
+            <ProtectedRoute>
+              <EventDetailPage />
             </ProtectedRoute>
           }
         />

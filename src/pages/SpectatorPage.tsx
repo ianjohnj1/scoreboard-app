@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, getSportIcon, getSportLabel } from '../lib/matches';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import CheerBar from '../components/CheerBar';
+import CommentFeed from '../components/CommentFeed';
 import CricketRoom from '../components/sports/CricketRoom';
 import GolfRoom from '../components/sports/GolfRoom';
 import DartsRoom from '../components/sports/DartsRoom';
@@ -30,6 +33,7 @@ const sportRooms: Record<string, React.ComponentType<{ ctx: MatchContext }>> = {
 
 export default function SpectatorPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
+  const { currentUser } = useAuth();
   const [match, setMatch] = useState<MatchRoom | null>(null);
   const [teams, setTeams] = useState<MatchTeam[]>([]);
   const [players, setPlayers] = useState<MatchPlayer[]>([]);
@@ -171,6 +175,18 @@ export default function SpectatorPage() {
       <div className="flex-1 overflow-hidden max-w-4xl mx-auto w-full">
         <SportRoom ctx={ctx} />
       </div>
+
+      {match.house_rules?.comments_enabled !== false && (
+        <div className="max-w-4xl mx-auto w-full px-4 pb-6 pt-3 space-y-3 flex-shrink-0">
+          <CheerBar contextId={match.id} viewerProfile={currentUser} />
+          <CommentFeed
+            contextType="match"
+            contextId={match.id}
+            viewerProfile={currentUser}
+            canModerate={!!currentUser && currentUser.id === match.created_by}
+          />
+        </div>
+      )}
     </div>
   );
 }

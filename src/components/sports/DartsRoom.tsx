@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Heart, RotateCcw, Target, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DartsBoard from './DartsBoard';
@@ -6,9 +6,9 @@ import UserAvatar from '../UserAvatar';
 import { completeMatchWithWinner, recordEvent, undoLastEvent } from '../../lib/matches';
 import { supabase } from '../../lib/supabase';
 import { createThrow, getSegmentKey } from '../../lib/darts/board';
-import { applyAroundTheWorldThrow, createAroundTheWorldState, getAroundTheWorldTarget } from '../../lib/darts/aroundTheWorldEngine';
-import { applyCountdownThrow, createCountdownState } from '../../lib/darts/countdownEngine';
-import { applyKillerThrow, createKillerState, overrideKillerTargets } from '../../lib/darts/killerEngine';
+import { addPlayerToAroundTheWorldState, applyAroundTheWorldThrow, createAroundTheWorldState, getAroundTheWorldTarget } from '../../lib/darts/aroundTheWorldEngine';
+import { addPlayerToCountdownState, applyCountdownThrow, createCountdownState } from '../../lib/darts/countdownEngine';
+import { addPlayerToKillerState, applyKillerThrow, createKillerState, overrideKillerTargets } from '../../lib/darts/killerEngine';
 import type { MatchContext } from '../../pages/MatchRoomPage';
 import type {
   AroundTheWorldRules,
@@ -88,12 +88,44 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
   const [isCreatingRematch, setIsCreatingRematch] = useState(false);
   const navigate = useNavigate();
 
+  const resetKeyRef = useRef<string | null>(null);
+  const prevPlayerIdsRef = useRef<string[]>([]);
+
   useEffect(() => {
-    setState(buildInitialState(variant, playerIds, countdownRules, killerRules, match.winner_profile_id));
-    setPendingMenu(null);
-    setUndoStack([]);
-    setRecentSegmentKey(null);
-    setError('');
+    const resetKey = [
+      variant,
+      match.id,
+      countdownRules.startScore,
+      countdownRules.doubleOut,
+      aroundRules.skipAheadViaMultiples,
+      aroundRules.ringRestriction,
+      killerRules.startingLives,
+      killerRules.activationRing,
+    ].join('|');
+
+    const previousIds = prevPlayerIdsRef.current;
+    const addedIds = playerIds.filter(id => !previousIds.includes(id));
+    const isPureAddition = resetKey === resetKeyRef.current
+      && previousIds.every(id => playerIds.includes(id))
+      && addedIds.length > 0;
+
+    if (isPureAddition) {
+      // Roster grew mid-match: extend existing progress instead of wiping it.
+      setState(prev => addedIds.reduce((next, id) => {
+        if (variant === 'around_the_world') return addPlayerToAroundTheWorldState(next, id);
+        if (variant === 'killer') return addPlayerToKillerState(next, id, killerRules);
+        return addPlayerToCountdownState(next, id, countdownRules);
+      }, prev));
+    } else if (resetKey !== resetKeyRef.current || previousIds.join('|') !== playerIds.join('|')) {
+      setState(buildInitialState(variant, playerIds, countdownRules, killerRules, match.winner_profile_id));
+      setPendingMenu(null);
+      setUndoStack([]);
+      setRecentSegmentKey(null);
+      setError('');
+    }
+
+    resetKeyRef.current = resetKey;
+    prevPlayerIdsRef.current = playerIds;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     variant,

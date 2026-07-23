@@ -168,6 +168,42 @@ export type PlayerCareerAnalytics = {
   killer_survival: number;
 };
 
+export type Comment = {
+  id: string;
+  context_type: 'match' | 'event';
+  context_id: string;
+  author_player_id: string;
+  author_display_name: string;
+  type: 'comment' | 'cheer';
+  content: string;
+  is_hidden: boolean;
+  created_at: string;
+};
+
+export type Event = {
+  id: string;
+  title: string;
+  description: string | null;
+  event_datetime: string;
+  location: string | null;
+  created_by: string;
+  created_at: string;
+};
+
+export type EventRsvp = {
+  event_id: string;
+  player_id: string;
+  status: 'going' | 'maybe' | 'not_going';
+  responded_at: string;
+};
+
+export type FanEngagementStats = {
+  profile_id: string;
+  total_comments_sent: number;
+  total_cheers_sent: number;
+  total_engagement: number;
+};
+
 export type CricketInnings = {
   id: string;
   match_id: string;

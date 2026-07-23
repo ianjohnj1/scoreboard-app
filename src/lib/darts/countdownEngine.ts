@@ -23,6 +23,21 @@ export function createCountdownState(playerIds: string[], rules: CountdownRules)
   };
 }
 
+export function addPlayerToCountdownState(
+  state: DartsRuntimeState,
+  playerId: string,
+  rules: CountdownRules
+): DartsRuntimeState {
+  if (state.countdown?.scores[playerId] !== undefined) return state;
+
+  return {
+    ...state,
+    countdown: {
+      scores: { ...(state.countdown?.scores || {}), [playerId]: rules.startScore },
+    },
+  };
+}
+
 export function applyCountdownThrow(
   state: DartsRuntimeState,
   playerId: string,

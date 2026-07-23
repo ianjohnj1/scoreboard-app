@@ -118,14 +118,13 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
     const stats = new Map<string, { totalPoints: number; tens: number; fives: number; twos: number; misses: number; hazards: number; chips: number; roundScores: number[] }>();
     matchPlayers.forEach(p => stats.set(p.id, { totalPoints: 0, tens: 0, fives: 0, twos: 0, misses: 0, hazards: 0, chips: 0, roundScores: Array(totalRounds).fill(0) }));
 
-    let currentRound = 1;
-    let currentPlayerIndex = 0;
-    let currentBallIndex = 0;
+    let lastScoreEvent: MatchEvent | null = null;
 
-    events.forEach(event => {
+    for (const event of events) {
       if (event.event_type === 'chip_off_score') {
         const pId = event.player_id!;
         const points = (event.event_data.points as number) || 0;
+        const round = (event.event_data.round as number) || 1;
         const playerStat = stats.get(pId);
         if (playerStat) {
           playerStat.totalPoints += points;
@@ -136,20 +135,41 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
           else if (points === 0) playerStat.misses += 1;
           else if (points === -1) playerStat.hazards += 1;
 
-          playerStat.roundScores[currentRound - 1] += points;
-        }
-
-        currentBallIndex++;
-        if (currentBallIndex >= ballsPerTurn) {
-          currentBallIndex = 0;
-          currentPlayerIndex++;
-          if (currentPlayerIndex >= matchPlayers.length) {
-            currentPlayerIndex = 0;
-            currentRound++;
+          // Bucket by the round recorded on the event itself, not a replayed
+          // counter, so a roster change mid-match can't reassign past scores.
+          if (round >= 1 && round <= totalRounds) {
+            playerStat.roundScores[round - 1] += points;
           }
         }
+
+        lastScoreEvent = event;
       }
-    });
+    }
+
+    // Derive the upcoming turn from the last recorded event + today's roster,
+    // instead of replaying the whole history against today's player count.
+    let currentRound = 1;
+    let currentPlayerIndex = 0;
+    let currentBallIndex = 0;
+
+    if (lastScoreEvent) {
+      const lastRound = (lastScoreEvent.event_data.round as number) || 1;
+      const lastBall = (lastScoreEvent.event_data.ball as number) || 1;
+      const lastPlayerIdx = matchPlayers.findIndex(p => p.id === lastScoreEvent.player_id);
+
+      currentRound = lastRound;
+      currentPlayerIndex = lastPlayerIdx === -1 ? 0 : lastPlayerIdx;
+      currentBallIndex = lastBall;
+
+      if (currentBallIndex >= ballsPerTurn) {
+        currentBallIndex = 0;
+        currentPlayerIndex++;
+        if (currentPlayerIndex >= matchPlayers.length) {
+          currentPlayerIndex = 0;
+          currentRound++;
+        }
+      }
+    }
 
     return {
       stats,

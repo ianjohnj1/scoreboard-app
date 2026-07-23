@@ -1,14 +1,18 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Plus, Trophy, Activity, Clock, ChevronRight,
-  QrCode, Zap, Crown, Trash2, RotateCcw
+  Plus, Trophy, Activity, Clock, ChevronRight, ChevronLeft,
+  QrCode, Zap, Crown, Trash2, RotateCcw, Calendar, MapPin
 } from 'lucide-react';
 import UserAvatar from '../components/UserAvatar';
 import ThemeToggle from '../components/ThemeToggle';
 import QRCodeModal from '../components/QRCodeModal';
+import Modal from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { getRecentMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel } from '../lib/matches';
+import { getUpcomingEvents, getEventRsvps } from '../lib/events';
+import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
+import type { Event, Profile } from '../lib/supabase';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -21,6 +25,67 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
+  const [goingAttendeesByEvent, setGoingAttendeesByEvent] = useState<Map<string, Profile[]>>(new Map());
+  const [activeEventIndex, setActiveEventIndex] = useState(0);
+  const eventCarouselRef = useRef<HTMLDivElement>(null);
+
+  const loadUpcomingEvents = useCallback(async (isMounted?: () => boolean) => {
+    try {
+      const events = await getUpcomingEvents(5);
+      if (isMounted && !isMounted()) return;
+      setUpcomingEvents(events);
+
+      if (events.length === 0) {
+        setGoingAttendeesByEvent(new Map());
+        return;
+      }
+
+      const rsvpsByEvent = await Promise.all(events.map(e => getEventRsvps(e.id)));
+      if (isMounted && !isMounted()) return;
+
+      const goingIdsByEvent = new Map<string, string[]>();
+      const allGoingIds = new Set<string>();
+      events.forEach((event, i) => {
+        const goingIds = rsvpsByEvent[i].filter(r => r.status === 'going').map(r => r.player_id);
+        goingIdsByEvent.set(event.id, goingIds);
+        goingIds.forEach(id => allGoingIds.add(id));
+      });
+
+      if (allGoingIds.size === 0) {
+        setGoingAttendeesByEvent(new Map());
+        return;
+      }
+
+      const { data } = await supabase.from('profiles').select(SAFE_PROFILE_COLUMNS).in('id', [...allGoingIds]);
+      if (isMounted && !isMounted()) return;
+
+      const profilesById = new Map((data || []).map(p => [p.id, { ...p, pin_hash: null } as Profile]));
+      const attendeesByEvent = new Map<string, Profile[]>();
+      events.forEach(event => {
+        const ids = goingIdsByEvent.get(event.id) || [];
+        attendeesByEvent.set(event.id, ids.map(id => profilesById.get(id)).filter(Boolean) as Profile[]);
+      });
+      setGoingAttendeesByEvent(attendeesByEvent);
+    } catch (err) {
+      console.error('Error loading upcoming events:', err);
+    }
+  }, []);
+
+  const handleCarouselScroll = useCallback(() => {
+    const el = eventCarouselRef.current;
+    if (!el || el.clientWidth === 0) return;
+    setActiveEventIndex(Math.round(el.scrollLeft / el.clientWidth));
+  }, []);
+
+  // overflow-x-auto scrolls fine with touch, but a mouse has no drag-to-scroll
+  // gesture - these buttons are the desktop-usable way to move between cards.
+  const scrollToEventIndex = useCallback((index: number) => {
+    const el = eventCarouselRef.current;
+    if (!el) return;
+    el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
+  }, []);
 
   const loadDashboardData = useCallback(async (isMounted?: () => boolean) => {
     setLoading(true);
@@ -56,14 +121,14 @@ export default function Dashboard() {
     if (!authLoading && currentUser) {
       let mounted = true;
       loadDashboardData(() => mounted);
+      loadUpcomingEvents(() => mounted);
       return () => { mounted = false; };
     }
-  }, [authLoading, currentUser, loadDashboardData]);
+  }, [authLoading, currentUser, loadDashboardData, loadUpcomingEvents]);
 
   const handleDeleteMatch = useCallback(async (matchId: string) => {
     if (deletingId) return;
-    if (!window.confirm('Are you sure you want to delete this match? This cannot be undone.')) return;
-    
+    setConfirmDeleteId(null);
     setDeletingId(matchId);
     try {
       await deleteMatch(matchId);
@@ -131,10 +196,7 @@ export default function Dashboard() {
               {error}
             </p>
             <button
-              onClick={() => {
-                let mounted = true;
-                loadDashboardData(() => mounted);
-              }}
+              onClick={() => loadDashboardData()}
               className="px-6 py-2.5 bg-charcoal-800 hover:bg-charcoal-700 text-charcoal-50 text-sm font-bold rounded-xl transition-all active:scale-95 flex items-center gap-2 mx-auto"
             >
               <RotateCcw size={16} />
@@ -159,6 +221,95 @@ export default function Dashboard() {
             <Plus size={28} className="text-charcoal-50" />
           </div>
         </button>
+
+        {/* Upcoming Events - hidden entirely when none exist. More than one? Swipe
+            between them instead of stacking cards, to keep the dashboard uncluttered. */}
+        {upcomingEvents.length > 0 && (
+          <div className="relative -mx-4 px-4">
+            <div
+              ref={eventCarouselRef}
+              onScroll={handleCarouselScroll}
+              className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
+            >
+              {upcomingEvents.map(event => {
+                const attendees = goingAttendeesByEvent.get(event.id) || [];
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => navigate(`/events/${event.id}`)}
+                    className="w-full flex-shrink-0 snap-center px-0
+                               bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600
+                               rounded-2xl p-5 flex items-center justify-between shadow-lg shadow-emerald-900/50
+                               active:scale-[0.98] transition-all duration-150 group text-left"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-emerald-200 text-sm font-medium">Upcoming Event</p>
+                      <h2 className="text-charcoal-50 text-2xl font-bold mt-0.5 truncate">{event.title}</h2>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-emerald-100/80 text-xs">
+                        <span className="flex items-center gap-1">
+                          <Clock size={12} />
+                          {new Date(event.event_datetime).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </span>
+                        {event.location && (
+                          <span className="flex items-center gap-1 truncate">
+                            <MapPin size={12} />
+                            {event.location}
+                          </span>
+                        )}
+                      </div>
+                      {attendees.length > 0 && (
+                        <div className="flex items-center -space-x-2 mt-2">
+                          {attendees.slice(0, 5).map(profile => (
+                            <UserAvatar
+                              key={profile.id}
+                              display_name={profile.display_name}
+                              avatar_color={profile.avatar_color}
+                              avatar_url={profile.avatar_url}
+                              size="xs"
+                              className="ring-2 ring-emerald-700"
+                            />
+                          ))}
+                          {attendees.length > 5 && (
+                            <span className="pl-3 text-[10px] font-bold text-emerald-100/80">+{attendees.length - 5}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="w-14 h-14 bg-white/10 rounded-xl flex items-center justify-center
+                                    group-hover:bg-white/20 transition-colors flex-shrink-0">
+                      <Calendar size={28} className="text-charcoal-50" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {upcomingEvents.length > 1 && (
+              <>
+                <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-charcoal-900/50 text-emerald-100 text-[10px] font-bold pointer-events-none">
+                  {activeEventIndex + 1} of {upcomingEvents.length}
+                </div>
+                {activeEventIndex > 0 && (
+                  <button
+                    onClick={() => scrollToEventIndex(activeEventIndex - 1)}
+                    aria-label="Previous event"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                  >
+                    <ChevronLeft size={18} className="text-charcoal-50" />
+                  </button>
+                )}
+                {activeEventIndex < upcomingEvents.length - 1 && (
+                  <button
+                    onClick={() => scrollToEventIndex(activeEventIndex + 1)}
+                    aria-label="Next event"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                  >
+                    <ChevronRight size={18} className="text-charcoal-50" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Champions Showcase */}
         {topStats.length > 0 && (
@@ -267,7 +418,7 @@ export default function Dashboard() {
                     key={match.id} 
                     match={match} 
                     onQR={() => setQrMatch(match)} 
-                    onDelete={() => handleDeleteMatch(match.id)}
+                    onDelete={() => setConfirmDeleteId(match.id)}
                     canDelete={isAdmin}
                     isDeleting={deletingId === match.id}
                   />
@@ -293,7 +444,7 @@ export default function Dashboard() {
                 key={match.id} 
                 match={match} 
                 onQR={() => setQrMatch(match)} 
-                onDelete={() => handleDeleteMatch(match.id)}
+                onDelete={() => setConfirmDeleteId(match.id)}
                 canDelete={isAdmin}
                 isDeleting={deletingId === match.id}
               />
@@ -310,6 +461,26 @@ export default function Dashboard() {
           onClose={() => setQrMatch(null)}
         />
       )}
+
+      {/* Delete confirmation - a native window.confirm() silently no-ops when
+          the app is embedded in a sandboxed preview iframe without
+          allow-modals, so this uses the app's own Modal instead. */}
+      <Modal isOpen={!!confirmDeleteId} onClose={() => setConfirmDeleteId(null)} title="Delete Match?">
+        <div className="space-y-4">
+          <p className="text-charcoal-300 text-sm">
+            Are you sure you want to delete this match? This cannot be undone.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmDeleteId(null)} className="btn-secondary flex-1">Cancel</button>
+            <button
+              onClick={() => confirmDeleteId && handleDeleteMatch(confirmDeleteId)}
+              className="btn-danger flex-1"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

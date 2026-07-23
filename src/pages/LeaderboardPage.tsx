@@ -1,13 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Trophy, RotateCcw, AlertCircle, Info, Target, Activity } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import { getSportLabel } from '../lib/matches';
 import { getGlobalLeaderboardData, SEASON_POINT_RULES } from '../lib/stats';
 import UserAvatar from '../components/UserAvatar';
 import ThemeToggle from '../components/ThemeToggle';
 import Modal from '../components/Modal';
 import type { Profile, PlayerCareerStats } from '../lib/supabase';
+
+type FanBoyEntry = { profile: Profile; total_engagement: number };
 
 type LeaderboardEntry = PlayerCareerStats & {
   profile: Profile;
@@ -27,6 +29,7 @@ export default function LeaderboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showSPModal, setShowSPModal] = useState(false);
+  const [fanBoy, setFanBoy] = useState<FanBoyEntry | null>(null);
 
   const sports = ['all', 'cricket', 'golf', 'darts', 'table_tennis', 'pool', 'basketball', 'cards', 'custom'];
 
@@ -139,6 +142,40 @@ export default function LeaderboardPage() {
     }
   }, [refreshKey, loadLeaderboard]);
 
+  const loadFanBoy = useCallback(async () => {
+    const { data } = await supabase
+      .from('fan_engagement_stats')
+      .select('*')
+      .order('total_engagement', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data || data.total_engagement <= 0) {
+      setFanBoy(null);
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select(SAFE_PROFILE_COLUMNS)
+      .eq('id', data.profile_id)
+      .maybeSingle();
+
+    setFanBoy(profile ? { profile: { ...profile, pin_hash: null } as Profile, total_engagement: data.total_engagement } : null);
+  }, []);
+
+  useEffect(() => { loadFanBoy(); }, [loadFanBoy]);
+
+  useEffect(() => {
+    // Recalculated live as comments/cheers come in, so the title can change
+    // hands mid-session - see fan_engagement_stats in the shared comments migration.
+    const channel = supabase
+      .channel('fanboy-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, () => loadFanBoy())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [loadFanBoy]);
+
   return (
     <div className="min-h-screen bg-charcoal-900 pb-24">
       <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-4 safe-top flex justify-between items-center transition-colors duration-300">
@@ -167,16 +204,33 @@ export default function LeaderboardPage() {
               <span className="font-bold">{error}</span>
             </div>
             <button
-              onClick={() => {
-                let mounted = true;
-                loadLeaderboard(() => mounted);
-              }}
+              onClick={() => loadLeaderboard()}
               className="px-4 py-2 bg-charcoal-800 hover:bg-charcoal-700 text-charcoal-50 text-sm font-bold rounded-lg transition-all flex items-center gap-2 mx-auto"
             >
               <RotateCcw size={14} />
               Retry
             </button>
           </div>
+        )}
+
+        {/* FanBoy - engagement-based, not tied to any one sport */}
+        {fanBoy && (
+          <Link
+            to={`/profile/${fanBoy.profile.id}`}
+            className="mb-4 flex items-center gap-3 rounded-2xl border border-accent-500/30 bg-accent-500/10 p-3 hover:bg-accent-500/15 transition-colors"
+          >
+            <UserAvatar
+              display_name={fanBoy.profile.display_name}
+              avatar_color={fanBoy.profile.avatar_color}
+              avatar_url={fanBoy.profile.avatar_url}
+              size="sm"
+            />
+            <p className="text-sm text-charcoal-200">
+              <span className="mr-1">🏆</span>
+              <span className="font-bold text-accent-300">FanBoy: {fanBoy.profile.display_name}</span>
+              {' '}— {fanBoy.total_engagement} cheers & comments
+            </p>
+          </Link>
         )}
 
         {/* Sport filter */}

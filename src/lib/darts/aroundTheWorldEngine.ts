@@ -24,6 +24,20 @@ export function createAroundTheWorldState(playerIds: string[]): DartsRuntimeStat
   };
 }
 
+export function addPlayerToAroundTheWorldState(
+  state: DartsRuntimeState,
+  playerId: string
+): DartsRuntimeState {
+  if (state.aroundTheWorld?.progress[playerId] !== undefined) return state;
+
+  return {
+    ...state,
+    aroundTheWorld: {
+      progress: { ...(state.aroundTheWorld?.progress || {}), [playerId]: 1 },
+    },
+  };
+}
+
 export function getAroundTheWorldTarget(progressValue: number): number | 'bull' {
   return progressValue > 20 ? 'bull' : progressValue;
 }

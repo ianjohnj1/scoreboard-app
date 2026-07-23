@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X, Monitor } from 'lucide-react';
+import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X } from 'lucide-react';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getSportIcon, getSportLabel } from '../lib/matches';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -53,7 +53,6 @@ export default function MatchRoomPage() {
   const [playerSearch, setPlayerSearch] = useState('');
   const [guestName, setGuestName] = useState('');
   const [isAddingGuest, setIsAddingGuest] = useState(false);
-  const [isTvDisplayMode, setIsTvDisplayMode] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -124,6 +123,31 @@ export default function MatchRoomPage() {
     return () => { mounted = false; };
   }, [loadMatch]);
 
+  // Refetches teams/players/profiles without toggling the page-level loading
+  // state, so roster edits don't unmount (and reset) the sport room mid-match.
+  const refreshRoster = useCallback(async () => {
+    if (!match) return;
+
+    const [t, p] = await Promise.all([
+      getMatchTeams(match.id),
+      getMatchPlayers(match.id),
+    ]);
+
+    setTeams(t || []);
+    setPlayers(p || []);
+
+    const pids = [...new Set((p || []).map(mp => mp.profile_id))];
+    if (pids.length > 0) {
+      const { data } = await supabase
+        .from('profiles')
+        .select(SAFE_PROFILE_COLUMNS)
+        .in('id', pids);
+
+      const map = new Map((data || []).map((pr) => [pr.id, { ...pr, pin_hash: null } as Profile]));
+      setProfiles(prev => new Map([...prev, ...map]));
+    }
+  }, [match]);
+
   // Subscribe to realtime updates for this match
   useEffect(() => {
     if (!match) return;
@@ -189,7 +213,7 @@ export default function MatchRoomPage() {
           batting_order: players.length + 1
         });
       if (error) throw error;
-      await loadMatch();
+      await refreshRoster();
     } catch (err) {
       console.error("Failed to add player:", err);
       alert("Failed to add player.");
@@ -218,9 +242,9 @@ export default function MatchRoomPage() {
         .delete()
         .eq('match_id', match.id)
         .eq('profile_id', profileId);
-      
+
       if (error) throw error;
-      await loadMatch();
+      await refreshRoster();
     } catch (err) {
       console.error("Failed to remove player:", err);
       alert("Failed to remove player.");
@@ -278,28 +302,17 @@ export default function MatchRoomPage() {
     currentUser,
     isAdmin,
     isBackyard: match.house_rules?.variant === 'backyard',
-    isTvDisplayMode,
+    isTvDisplayMode: false,
     onRefresh: loadMatch
   };
-  
+
 
   const SportRoom = getSportRoom(match);
 
   return (
     <div className="h-[100dvh] bg-charcoal-900 flex flex-col relative">
-      {/* TV Mode Escape Badge */}
-      {isTvDisplayMode && (
-        <button
-          onClick={() => setIsTvDisplayMode(false)}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-accent-600 text-charcoal-50 px-6 py-3 rounded-full font-black uppercase tracking-widest text-xs shadow-[0_0_30px_rgba(37,99,235,0.4)] animate-pulse flex items-center gap-2 border-2 border-accent-400/50"
-        >
-          <Monitor size={16} />
-          TV Mode Active — Click to Show Scoring Buttons
-        </button>
-      )}
-
       {/* Header */}
-      <div className={`bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-3 safe-top flex-shrink-0 transition-opacity duration-500 ${isTvDisplayMode ? 'opacity-0 pointer-events-none h-0 p-0 border-0' : 'opacity-100'}`}>
+      <div className="bg-charcoal-800 border-b border-charcoal-700 px-4 pt-12 pb-3 safe-top flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/')}
@@ -368,13 +381,6 @@ export default function MatchRoomPage() {
           >
             {match.status === 'paused' ? <Play size={18} /> : <Pause size={18} />}
             {match.status === 'paused' ? 'Resume Match' : 'Pause Match'}
-          </button>
-          <button
-            onClick={() => { setIsTvDisplayMode(true); setShowMenu(false); }}
-            className="w-full btn-secondary flex items-center gap-3 justify-start"
-          >
-            <Monitor size={18} />
-            TV Display Mode
           </button>
           <button
             onClick={() => { setShowMenu(false); setShowEditRoster(true); }}

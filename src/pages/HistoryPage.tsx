@@ -85,10 +85,7 @@ export default function HistoryPage() {
               <span className="font-bold">{error}</span>
             </div>
             <button
-              onClick={() => {
-                let mounted = true;
-                load(() => mounted);
-              }}
+              onClick={() => load()}
               className="px-4 py-2 bg-charcoal-800 hover:bg-charcoal-700 text-charcoal-50 text-sm font-bold rounded-lg transition-all flex items-center gap-2 mx-auto"
             >
               <RotateCcw size={14} />
