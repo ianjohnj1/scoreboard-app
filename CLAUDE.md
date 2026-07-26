@@ -23,6 +23,14 @@ npm run build        # vite build -> dist/
 
 `.env` supplies `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. There is no local Supabase stack and no `supabase/config.toml` — the app and the migrations both point at one shared live project, so schema changes are immediately real for every user.
 
+## Repo hygiene — external tooling history
+
+This app was iterated on through several AI coding tools before consolidating on Claude Code — `.trae/`, `.bolt/`, and `.cursor` existed for that reason (durable content merged into this file, directories removed 2026-07-26).
+
+That history was a live risk, not just clutter: on 2026-07-26, `src/contexts/AuthContext.tsx` and `src/components/sports/TableTennisRoom.tsx` were found silently reverted to older versions on disk at the start of a session — Bolt.new was still connected to this repo and had overwritten both files locally. The reverted `AuthContext.tsx` reintroduced the session-forgery hole the current version's own comments warn about (recovering a session from a cached profile id instead of `rpc_resume_session`) plus a `select('*')` on `profiles` that fails outright now that `pin_hash` is revoked. `npm run typecheck` caught it immediately via an unrelated-looking argument-count error in `LoginPage.tsx` — that command is the fast tripwire for this class of problem.
+
+Bolt's Supabase connection has been disconnected, and Bolt, Lovable, and Cursor have all had their GitHub access to this repo revoked (2026-07-26), closing this specific vector. Even so: if `git status` shows unexplained modifications at the start of a session — especially to auth/security-sensitive files — don't assume they're the user's in-progress work. Check `git log`/`git diff` against `HEAD` and confirm with the user before building on top of them.
+
 ## Architecture
 
 React 18 + TypeScript + Vite SPA, Tailwind, react-router, Supabase (Postgres + Realtime + Storage). No state library — React Context (`AuthContext`, `ThemeContext`) plus per-page `useState`.
