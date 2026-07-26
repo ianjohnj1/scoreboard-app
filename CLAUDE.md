@@ -122,5 +122,4 @@ The local folder and the remote `schema_migrations` ledger have gone out of sync
 
 - Rematch flows in `CricketRoom`, `DartsRoom`, and `ChipOffRoom` still mint room codes with `Math.random()`; the `NewMatchPage` path uses `crypto.randomUUID()`.
 - `player_career_stats` writes are client-computed and scoped to the caller's own `profile_id` — a player can misreport their own numbers (not other players').
-- Matches abandoned mid-game stay "LIVE" in the DB; `isMatchStale()` (4h) only filters them out of the Dashboard's Live Activity list.
-- Post-completion editing is inconsistent across sport rooms — some restrict scoring to `status === 'active'` without an admin exception, `GolfRoom` allows any non-spectator to edit a completed match. Deleting a match is admin-only by design, even for its creator.
+- Deleting a match is admin-only by design, even for its creator.

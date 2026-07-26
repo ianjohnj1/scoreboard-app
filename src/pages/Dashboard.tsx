@@ -9,7 +9,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import QRCodeModal from '../components/QRCodeModal';
 import Modal from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
-import { getRecentMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel } from '../lib/matches';
+import { getRecentMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel, isMatchStale } from '../lib/matches';
 import { getUpcomingEvents, getEventRsvps } from '../lib/events';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import type { Event, Profile } from '../lib/supabase';
@@ -100,7 +100,7 @@ export default function Dashboard() {
       if (isMounted && !isMounted()) return;
 
       setRecentMatches((recent || []).filter(Boolean));
-      setActiveMatches((active || []).filter(Boolean));
+      setActiveMatches((active || []).filter(match => match && !isMatchStale(match)));
       setLiveActivity((live || []).filter(Boolean));
     } catch (err: any) {
       console.error("Error loading dashboard data:", err);

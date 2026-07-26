@@ -15,7 +15,8 @@ interface ChipOffRules {
 }
 
 export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, players, profiles, isSpectator, currentUser, isTvDisplayMode } = ctx;
+  const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
+  const canInteract = match.status === 'active' || isAdmin;
   const rules = (match.house_rules || {}) as ChipOffRules;
   const ballsPerTurn = rules.balls_per_turn || 3;
   const totalRounds = rules.total_rounds || 9;
@@ -184,7 +185,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
   const isMyTurn = !isSpectator && currentUser?.id === currentPlayer?.id;
 
   const handleScore = async (points: number) => {
-    if (!currentPlayer || loading || isSpectator) return;
+    if (!currentPlayer || loading || isSpectator || !canInteract) return;
     setLoading(true);
     try {
       await recordEvent(
@@ -235,7 +236,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
   };
 
   const handleUndo = async () => {
-    if (loading || isSpectator) return;
+    if (loading || isSpectator || !canInteract) return;
     setLoading(true);
     try {
       await undoLastEvent(match.id);
@@ -412,7 +413,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => handleScore(10)}
-                disabled={loading}
+                disabled={loading || !canInteract}
                 className="col-span-2 group relative overflow-hidden py-8 rounded-3xl border-2 border-warning-500/50 bg-warning-500/10 active:scale-95 transition-all shadow-[0_0_30px_rgba(245,158,11,0.1)]"
               >
                 <div className="absolute inset-0 bg-gradient-to-b from-warning-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -425,7 +426,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
 
               <button
                 onClick={() => handleScore(5)}
-                disabled={loading}
+                disabled={loading || !canInteract}
                 className="py-6 rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/5 active:scale-95 transition-all flex flex-col items-center"
               >
                 <span className="text-3xl font-black text-emerald-400 leading-none">5</span>
@@ -434,7 +435,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
 
               <button
                 onClick={() => handleScore(2)}
-                disabled={loading}
+                disabled={loading || !canInteract}
                 className="py-6 rounded-2xl border-2 border-blue-500/40 bg-blue-500/5 active:scale-95 transition-all flex flex-col items-center"
               >
                 <span className="text-3xl font-black text-blue-400 leading-none">2</span>
@@ -443,7 +444,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
 
               <button
                 onClick={() => handleScore(0)}
-                disabled={loading}
+                disabled={loading || !canInteract}
                 className={`py-5 rounded-2xl border-2 active:scale-95 transition-all flex items-center justify-center gap-3 ${
                   hazardPenalty ? '' : 'col-span-2'
                 } border-charcoal-700 bg-charcoal-800 text-charcoal-400`}
@@ -455,7 +456,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
               {hazardPenalty && (
                 <button
                   onClick={() => handleScore(-1)}
-                  disabled={loading}
+                  disabled={loading || !canInteract}
                   className="py-5 rounded-2xl border-2 border-danger-500/40 bg-danger-500/5 text-danger-400 active:scale-95 transition-all flex items-center justify-center gap-3"
                 >
                   <span className="text-2xl font-black font-mono leading-none">-1</span>
@@ -467,7 +468,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
             <div className="flex gap-2">
               <button
                 onClick={handleUndo}
-                disabled={loading || events.length === 0}
+                disabled={loading || !canInteract || events.length === 0}
                 className="flex-1 py-3 rounded-xl bg-charcoal-800 border border-charcoal-700 text-charcoal-400 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2"
               >
                 <RotateCcw size={14} /> Undo Last Shot
