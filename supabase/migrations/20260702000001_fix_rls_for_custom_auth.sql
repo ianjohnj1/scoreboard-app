@@ -1,3 +1,14 @@
+-- Historical migration, recovered 2026-07-26 while reconciling migration
+-- history (see docs/rls-ground-rules.md). This was an emergency revert: the
+-- prior day's 20260701000005_security_hardening.sql gated writes on
+-- `auth.uid() = created_by`, which broke almost everything because this app
+-- never used Supabase Auth (auth.uid() is always NULL) - so this file
+-- reopened every affected table to USING(true)/WITH CHECK(true) wholesale.
+-- All of it was later superseded by session-aware policies during the
+-- 2026-07-22/23 security audit and RLS lockdown - confirmed via live
+-- pg_policies that none of these policy names exist today. Kept for
+-- historical accuracy; do not treat this as the current RLS.
+
 -- Fix RLS for custom PIN-based auth
 -- The previous hardening used auth.uid() which is always NULL for custom auth.
 
