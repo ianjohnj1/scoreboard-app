@@ -112,6 +112,12 @@ Icons are `lucide-react` only. Don't add UI-theme, component, or icon packages �
 
 New migration files need a **unique 14-digit timestamp prefix** (`YYYYMMDDHHMMSS`); date-only prefixes collided and broke CLI history once already. Core tables (`profiles`, `match_rooms`, …) were created via the Supabase dashboard and have no `CREATE TABLE` anywhere in this repo — the live database is the only source of truth for their full shape. New tables should always get a migration-tracked `CREATE TABLE`.
 
+### Migration history has drifted from live twice — check before trusting it
+
+The local folder and the remote `schema_migrations` ledger have gone out of sync twice: 2026-07-23 (colliding date-only prefixes plus ~30 files applied by hand-pasting into the dashboard, with no local record at all) and 2026-07-26 (more of the same, plus `apply_migration` — see below). Both were fixed the same way: verify each file's real effect against live `pg_policies`/`pg_indexes` first, rename it to a unique 14-digit timestamp reflecting when it actually happened (from git blame/commit content, never guessed), then `supabase migration repair --status applied <version>` — bookkeeping only, it never executes SQL. That last part matters: several of the files reconciled on 2026-07-26 (`fix_active_sessions_rls.sql`, `fix_rls_for_custom_auth.sql`, now dated `20260626`/`20260702`) create the exact `USING (true)` policies the RLS lockdown later removed — actually re-running them via `db push`/`db reset` would reopen that hole, which is exactly why `repair` (bookkeeping-only) and never `push` is the right tool for closing gaps like this.
+
+`apply_migration` (the Supabase MCP tool) is a live source of this drift, not just something that fixes it: it auto-generates its own version at apply time regardless of what the local file is named, so a mismatch appears immediately after every use. Run `supabase migration list` right after calling it and rename the local file to match before it compounds.
+
 ## Known gaps
 
 - Rematch flows in `CricketRoom`, `DartsRoom`, and `ChipOffRoom` still mint room codes with `Math.random()`; the `NewMatchPage` path uses `crypto.randomUUID()`.
