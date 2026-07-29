@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type { MatchRoom, MatchTeam, MatchPlayer } from './supabase';
-import { updateCareerStats } from './stats';
+import { determineAndSaveWinnerIfMissing } from './stats';
 
 // A match that hasn't seen any status/score updates in this long is likely abandoned
 // rather than genuinely still being played.
@@ -78,16 +78,15 @@ export async function updateMatchStatus(matchId: string, status: string): Promis
   
   if (error) throw error;
 
-  // Trigger stats update if match is completed
+  // Some sports (classic golf; any match ended early via this generic path)
+  // never got an explicit winner from their room's own scoring UI - backfill
+  // it from raw scores now that the match is closing.
   if (status === 'completed') {
     try {
-      console.log(`Match ${matchId} completed. Updating career stats...`);
-      await updateCareerStats(matchId);
-      console.log(`Successfully updated career stats for match ${matchId}`);
+      await determineAndSaveWinnerIfMissing(matchId);
     } catch (err) {
-      console.error(`CRITICAL: Failed to update career stats for match ${matchId} after retries:`, err);
-      // We don't throw here to avoid breaking the match completion flow in the UI,
-      // but we log it as critical for debugging.
+      console.error(`Failed to determine winner for match ${matchId} on completion:`, err);
+      // We don't throw here to avoid breaking the match completion flow in the UI.
     }
   }
 }
@@ -104,14 +103,6 @@ export async function completeMatchWithWinner(matchId: string, winnerProfileId: 
     .eq('id', matchId);
 
   if (error) throw error;
-
-  try {
-    console.log(`Match ${matchId} completed with winner ${winnerProfileId}. Updating career stats...`);
-    await updateCareerStats(matchId);
-    console.log(`Successfully updated career stats for match ${matchId}`);
-  } catch (err) {
-    console.error(`CRITICAL: Failed to update career stats for match ${matchId} after winner completion:`, err);
-  }
 }
 
 export async function completeMatchWithTeamWinner(matchId: string, winnerTeamId: string): Promise<void> {
@@ -126,14 +117,6 @@ export async function completeMatchWithTeamWinner(matchId: string, winnerTeamId:
     .eq('id', matchId);
 
   if (error) throw error;
-
-  try {
-    console.log(`Match ${matchId} completed with team winner ${winnerTeamId}. Updating career stats...`);
-    await updateCareerStats(matchId);
-    console.log(`Successfully updated career stats for match ${matchId}`);
-  } catch (err) {
-    console.error(`CRITICAL: Failed to update career stats for match ${matchId} after team winner completion:`, err);
-  }
 }
 
 export async function getRecentMatches(limit = 10): Promise<MatchRoom[]> {

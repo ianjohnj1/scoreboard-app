@@ -111,7 +111,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
     const channel = supabase
       .channel(`pvp:${match.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${match.id}` }, () => loadEvents())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_career_stats' }, () => loadAnalytics())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'match_rooms', filter: `id=eq.${match.id}` }, () => loadAnalytics())
       .subscribe();
 
     return () => {

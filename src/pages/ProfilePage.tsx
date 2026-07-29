@@ -208,8 +208,8 @@ export default function ProfilePage() {
         {
           event: '*',
           schema: 'public',
-          table: 'player_career_stats',
-          filter: `profile_id=eq.${profileId}`
+          table: 'match_rooms',
+          filter: 'status=eq.completed'
         },
         () => {
           setRefreshKey(prev => prev + 1);
