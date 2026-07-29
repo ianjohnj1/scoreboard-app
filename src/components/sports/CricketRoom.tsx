@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { recordEvent, undoLastEvent, completeMatchWithWinner, completeMatchWithTeamWinner } from '../../lib/matches';
+import { recordEvent, undoLastEvent, completeMatchWithWinner, completeMatchWithTeamWinner, generateRoomCode } from '../../lib/matches';
 import Modal from '../Modal';
 import UserAvatar from '../UserAvatar';
 import { Trophy, RotateCcw, ArrowLeft } from 'lucide-react';
@@ -587,7 +587,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
     if (isCreatingRematch) return;
     setIsCreatingRematch(true);
     try {
-      const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const roomCode = generateRoomCode();
       const { data: newMatch, error: matchError } = await supabase
         .from('match_rooms')
         .insert({

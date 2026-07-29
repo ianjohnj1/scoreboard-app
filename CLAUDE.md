@@ -81,6 +81,7 @@ If a room memoizes a function that both reads and sets its own `loading` state (
 - `ruleDefinitions.ts` / `statDefinitions.ts` in `src/data/` are the single source of user-facing rule and stat copy, surfaced by `InfoTooltip` and `HouseRulesPanel`. House rules are config in TypeScript, not a database table.
 - `LineupOrderBuilder` (turn order at setup) and `TieBreakerChallenge` (PvP tie-breaks; raw distance measurements are ephemeral UI state and deliberately never persisted).
 - `Modal`, plus the `.modal-*` classes, for every dialog.
+- `generateRoomCode()` in `lib/matches.ts` (8 hex chars from a UUID's first segment) for every new `match_rooms.room_code` — initial creation (`NewMatchPage`) and every room's rematch flow (`CricketRoom`, `DartsRoom`, `ChipOffRoom`) share it. Don't reintroduce a local `Math.random()`-based code.
 
 Names that look plausible but do not exist — don't code against them: there is no standalone `teams` table (use `match_teams` + `match_players.team_id`), no `ledger_entries` table (use `match_events` via `recordEvent()`), no `PlayerAvatar` component, and no separate `sport` enum value for Chip Off or Putt vs Putt. PvP turn order is `match_players.lineup_order` — not a `match_teams` array, and not cricket's `batting_order`.
 
@@ -128,6 +129,5 @@ The local folder and the remote `schema_migrations` ledger have gone out of sync
 
 ## Known gaps
 
-- Rematch flows in `CricketRoom`, `DartsRoom`, and `ChipOffRoom` still mint room codes with `Math.random()`; the `NewMatchPage` path uses `crypto.randomUUID()`.
 - `player_career_stats` writes are client-computed and scoped to the caller's own `profile_id` — a player can misreport their own numbers (not other players').
 - Deleting a match is admin-only by design, even for its creator.

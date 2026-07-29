@@ -3,7 +3,7 @@ import { ArrowLeft, Heart, RotateCcw, Target, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DartsBoard from './DartsBoard';
 import UserAvatar from '../UserAvatar';
-import { completeMatchWithWinner, recordEvent, undoLastEvent } from '../../lib/matches';
+import { completeMatchWithWinner, recordEvent, undoLastEvent, generateRoomCode } from '../../lib/matches';
 import { supabase } from '../../lib/supabase';
 import { createThrow, getSegmentKey } from '../../lib/darts/board';
 import { addPlayerToAroundTheWorldState, applyAroundTheWorldThrow, createAroundTheWorldState, getAroundTheWorldTarget } from '../../lib/darts/aroundTheWorldEngine';
@@ -241,7 +241,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
     if (isCreatingRematch) return;
     setIsCreatingRematch(true);
     try {
-      const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const roomCode = generateRoomCode();
       const { data: newMatch, error: matchError } = await supabase
         .from('match_rooms')
         .insert({

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { recordEvent, undoLastEvent, completeMatchWithWinner } from '../../lib/matches';
+import { recordEvent, undoLastEvent, completeMatchWithWinner, generateRoomCode } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';
 import Modal from '../Modal';
 import { useNavigate } from 'react-router-dom';
@@ -252,7 +252,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
     if (isCreatingRematch) return;
     setIsCreatingRematch(true);
     try {
-      const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const roomCode = generateRoomCode();
       const { data: newMatch, error: matchError } = await supabase
         .from('match_rooms')
         .insert({

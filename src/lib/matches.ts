@@ -15,6 +15,17 @@ export function isMatchStale(match: Pick<MatchRoom, 'status' | 'updated_at' | 'c
   return Date.now() - referenceTime > STALE_MATCH_THRESHOLD_MS;
 }
 
+// 8 hex chars from a UUID's first segment - far larger a keyspace than the
+// 5-char base36 Math.random() codes this replaced, and not subject to
+// Math.random()'s weaker (non-cryptographic) randomness.
+export function generateRoomCode(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().split('-')[0].toUpperCase();
+  }
+  // Fallback for non-secure contexts (e.g. http:// IP access) where crypto.randomUUID is unavailable
+  return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join('').toUpperCase();
+}
+
 export async function getMatchByCode(code: string): Promise<MatchRoom | null> {
   const { data, error } = await supabase
     .from('match_rooms')

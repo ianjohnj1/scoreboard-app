@@ -13,6 +13,7 @@ import LineupOrderBuilder from '../components/LineupOrderBuilder';
 import { getRuleDefinition } from '../data/ruleDefinitions';
 import type { Profile, CricketInnings } from '../lib/supabase';
 import { SAFE_PROFILE_COLUMNS } from '../lib/supabase';
+import { generateRoomCode } from '../lib/matches';
 
 function generateUUID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -271,8 +272,7 @@ export default function NewMatchPage() {
     try {
       // 1. Generate IDs and Room Code
       const matchId = generateUUID();
-      // Use the first segment of a UUID for a secure 8-character room code
-      const roomCode = generateUUID().split('-')[0].toUpperCase();
+      const roomCode = generateRoomCode();
 
       // 2. Insert the match record
       const { error: matchError } = await supabase
