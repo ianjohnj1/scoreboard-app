@@ -13,7 +13,7 @@ npm run build        # vite build -> dist/
 ```
 
 - **`npm run build` does not typecheck** — it's `vite build` alone. `npm run typecheck` is the real gate; run it after any non-trivial edit.
-- **Lint is dirty at baseline** (~66 errors, ~9 warnings, mostly `@typescript-eslint/no-explicit-any`). Don't treat a clean run as the bar; just don't add new categories of error.
+- **Lint is clean** (0 errors, 0 warnings, as of 2026-07-30 — it used to sit at ~66 errors/~9 warnings, mostly `@typescript-eslint/no-explicit-any`). Treat any new error or warning as a real regression, not baseline noise, and fix it rather than reaching for `any`. A handful of `react-hooks/exhaustive-deps` and `react-refresh/only-export-components` warnings are permanently silenced with inline `eslint-disable-next-line` comments where the "fix" would be worse than the warning (see the Realtime note below, and `useAuth`/`useTheme` in `AuthContext.tsx`/`ThemeContext.tsx`) — read the comment before touching those lines rather than deleting it to chase a clean count.
 - **There is no test suite** — no test runner is installed. Verification means typecheck + lint + actually driving the app in the browser preview.
 - **Deploying is a separate action from committing.** Production (Cloudflare Pages) has no git integration; `git push` never updates the live site. See `.claude/skills/deploy-production/SKILL.md`.
 - For browser QA, log in as the existing test account (`claudetester` / PIN `1234`) rather than signing up a new one — every signup becomes a real profile on the shared leaderboard. If the app is already logged in, keep using that session.
@@ -71,6 +71,8 @@ Variants live in `house_rules.variant`, not in `sport`:
 
 Darts sub-games are pure reducers (`createXState` / `applyXThrow` over `DartsRuntimeState`) in `src/lib/darts/`, kept separate from the SVG board geometry in `board.ts`.
 
+If a room memoizes a function that both reads and sets its own `loading` state (e.g. a guard like `if (loading) return;` inside a `useCallback`), don't put the reactive `loading` value in that callback's dependency array — every toggle recreates the callback, which recreates anything memoized on top of it (in `GolfRoom.tsx`, `loadData`), which can retrigger a mount `useEffect` that calls it again, forever. `GolfRoom.tsx` mirrors `loading` into a `loadingRef` for exactly this reason — the guard reads the ref, the dependency array doesn't include it.
+
 `DartsBoard.tsx`'s SVG `viewBox` is padded to `-24 -24 448 448`, not the `0 0 400 400` the board's own `DARTBOARD_CENTER`/`DARTBOARD_RADIUS` constants (200/190, in `board.ts`) would suggest — number labels sit at radius 205, so a tight viewBox clips them at 12/6 o'clock. The multiplier-menu popup's position is computed from that same `viewBox` origin/size (`VIEWBOX_MIN`/`VIEWBOX_SIZE` in `DartsBoard.tsx`); if the padding ever changes, that math must change with it or the popup lands off-target.
 
 ### Shared building blocks — reach for these before writing a new one
@@ -88,13 +90,15 @@ Completing a match (`updateMatchStatus('completed')`, `completeMatchWithWinner`,
 
 Season points come from `SEASON_POINT_RULES` alone — placement 100 / 50 / 25 with 10 for finishing at all, plus milestones (cricket 50+ runs = 50, 3+ wickets = 30; each hole-in-one or Chip Off ace = 50). It's exported so the Leaderboard's explainer modal renders the live values; change the constant, never a hardcoded integer at a call site. In team games every player on the team receives their team's placement points. Chip Off and classic golf deliberately share one unified Golf tab and both increment the same `matches_played` / `matches_won`.
 
-`src/lib/stats.ts` carries **two near-identical `event_type` switches** — one inside `aggregateMatchStats()` (~line 356) and one inside `getGlobalLeaderboardData()` (~line 743). A new event type that should count toward stats must be added to both, or the leaderboard and the profile page will disagree.
+`src/lib/stats.ts` carries **two near-identical `event_type` switches** — one inside `aggregateMatchStats()` and one inside `getGlobalLeaderboardData()`. A new event type that should count toward stats must be added to both, or the leaderboard and the profile page will disagree. Both switches cast `event_data` (typed `unknown` on `MatchEventRow`) to a per-event-type interface (`ChipOffScoreEventData`, `DartsWinEventData`, `GolfScoreEventData`, …) defined near the top of the file — a new event type needs one of these too (or a cast to an existing one if the shape matches), not just a `case` block, or the added fields will be untyped `any` again.
 
 Derived per-player analytics (strike rate, checkout %, scoring efficiency, …) come from the Postgres views `player_career_analytics` and `fan_engagement_stats`, read directly by `ProfilePage`, `LeaderboardPage`, and `PvPRoom`. Changing one of those metrics is a migration, not a TypeScript edit. `STATS_AUDIT_LOG.md` maps each user-facing metric to its column, formula, and storage path.
 
 ### Realtime
 
 Rooms and list pages subscribe with `supabase.channel(...).on('postgres_changes', { table, filter: 'match_id=eq.<id>' }, …)` and the handler just refetches — payloads are used as a change signal, not as data. A table must be in the realtime publication to fire (`supabase/migrations/20260724_enable_realtime.sql`). Always `supabase.removeChannel(channel)` on cleanup.
+
+These subscription effects (in `MatchRoomPage.tsx`, `SpectatorPage.tsx`) deliberately depend on `match?.id`/`match?.status`, not the whole `match` object — `match` is a fresh object reference on every refetch, so depending on it directly would tear down and resubscribe the channel (or, for the `active_sessions` writer effect, redundantly clear-then-rewrite `match_id`) far more often than needed. ESLint's `exhaustive-deps` flags this as a missing dependency; the fix is an inline disable comment, not adding `match` to the array.
 
 ### Theme and styling
 
