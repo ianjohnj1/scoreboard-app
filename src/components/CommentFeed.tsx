@@ -83,9 +83,10 @@ export default function CommentFeed({
     try {
       await postComment(contextType, contextId, draft.trim());
       setDraft('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to post comment:', err);
-      if (err?.message?.includes('Rate limit')) {
+      const message = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message) : '';
+      if (message.includes('Rate limit')) {
         alert('Slow down a little before posting again.');
       } else {
         alert('Failed to post. Please try again.');

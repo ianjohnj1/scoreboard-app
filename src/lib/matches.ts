@@ -221,7 +221,13 @@ export async function deleteMatch(matchId: string): Promise<void> {
   }
 }
 
-export async function getLiveActivity(): Promise<any[]> {
+export interface LiveActivityEntry {
+  session: { id: string };
+  profile: { display_name: string; avatar_color: string; avatar_url: string | null };
+  match: MatchRoom;
+}
+
+export async function getLiveActivity(): Promise<LiveActivityEntry[]> {
   const staleCutoff = new Date(Date.now() - STALE_MATCH_THRESHOLD_MS).toISOString();
 
   const { data, error } = await supabase
@@ -234,23 +240,23 @@ export async function getLiveActivity(): Promise<any[]> {
     .gte('updated_at', staleCutoff)
     .order('created_at', { ascending: false })
     .limit(5);
-  
+
   if (error) throw error;
-  
+
   // Filter out matches where the profile is missing (orphaned records)
   return (data || [])
     .filter(match => match.created_by_profile)
     .map(match => ({
       session: { id: match.id },
       profile: match.created_by_profile,
-      match: match
+      match: match as unknown as MatchRoom
     }));
 }
 
 export async function recordEvent(
   matchId: string,
   eventType: string,
-  eventData: Record<string, any> = {},
+  eventData: Record<string, unknown> = {},
   playerId?: string,
   teamId?: string,
   recordedBy?: string

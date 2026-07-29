@@ -11,7 +11,7 @@ import Avatar from '../components/Avatar';
 import InfoTooltip from '../components/InfoTooltip';
 import LineupOrderBuilder from '../components/LineupOrderBuilder';
 import { getRuleDefinition } from '../data/ruleDefinitions';
-import type { Profile } from '../lib/supabase';
+import type { Profile, CricketInnings } from '../lib/supabase';
 import { SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 
 function generateUUID() {
@@ -153,7 +153,7 @@ export default function NewMatchPage() {
     }
     
     return () => { mounted = false; };
-  }, [currentUser]);
+  }, [activeUser]);
   useEffect(() => {
     if (cricketVariant === 'backyard') {
       setHouseRules({
@@ -392,7 +392,13 @@ export default function NewMatchPage() {
       if (selectedSport === 'cricket') {
         const isBackyard = cricketVariant === 'backyard';
         
-        const inningsData: any = {
+        const inningsData: Omit<CricketInnings, 'created_at' | 'updated_at' | 'batting_team_id' | 'bowling_team_id' | 'current_batter1_id' | 'current_batter2_id' | 'current_bowler_id' | 'target_runs'> & {
+          batting_team_id?: string | null;
+          bowling_team_id?: string | null;
+          current_batter1_id?: string | null;
+          current_batter2_id?: string | null;
+          current_bowler_id?: string | null;
+        } = {
           id: generateUUID(),
           match_id: matchId,
           innings_number: 1,
@@ -428,9 +434,10 @@ export default function NewMatchPage() {
       // 5. Navigate to the match room
       navigate(`/match/${roomCode}`);
       
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Failed to create match:", e);
-      setError(e.message || 'Failed to create match. Please try again.');
+      const message = typeof e === 'object' && e !== null && 'message' in e ? String((e as { message: unknown }).message) : '';
+      setError(message || 'Failed to create match. Please try again.');
     } finally {
       setLoading(false);
     }

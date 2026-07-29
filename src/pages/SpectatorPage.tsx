@@ -74,6 +74,9 @@ export default function SpectatorPage() {
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
+    // match.id/match.status (not the whole match object, which is a fresh
+    // reference on every refetch) intentionally gate resubscription here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match?.id, match?.status, loadData]);
 
   if (loading) {

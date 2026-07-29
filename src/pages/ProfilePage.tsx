@@ -175,9 +175,10 @@ export default function ProfilePage() {
         syncCurrentUser(safeProfile);
         setTargetProfile(safeProfile);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error uploading avatar:", err);
-      alert(`Failed to upload avatar: ${err.message || 'Please check your connection and try again.'}`);
+      const message = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message) : '';
+      alert(`Failed to upload avatar: ${message || 'Please check your connection and try again.'}`);
     } finally {
       setUploadingAvatar(false);
     }

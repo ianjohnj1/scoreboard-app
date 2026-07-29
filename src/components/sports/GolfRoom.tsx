@@ -23,11 +23,16 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
   const [scores, setScores] = useState<Map<string, GolfScore>>(new Map()); // key: `${holeId}:${profileId}`
   const [selectedHole, setSelectedHole] = useState<GolfHole | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoadingState] = useState(false);
   const isMountedRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  const setLoading = useCallback((value: boolean) => {
+    loadingRef.current = value;
+    setLoadingState(value);
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -44,14 +49,14 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
     .map(p => profiles.get(p.profile_id))
     .filter(Boolean) as Profile[];
 
-  const initializeHoles = async () => {
-    if (isSpectator || loading || !canInteract) return;
+  const initializeHoles = useCallback(async () => {
+    if (isSpectator || loadingRef.current || !canInteract) return;
     setLoading(true);
     setInitError(null);
     try {
-      const courseData = (match.house_rules as any)?.course_data as { number: number; name: string; par: number }[] | null;
-      
-      const newHoles = courseData 
+      const courseData = (match.house_rules as Record<string, unknown>)?.course_data as { number: number; name: string; par: number }[] | null;
+
+      const newHoles = courseData
         ? courseData.map(h => ({
             match_id: match.id,
             hole_number: h.number,
@@ -69,15 +74,16 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
       if (insertError) throw insertError;
       setHoles(data || []);
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error initializing golf holes:", error);
-      setInitError(error.message || "Failed to initialize holes");
+      const message = typeof error === 'object' && error !== null && 'message' in error ? String((error as { message: unknown }).message) : '';
+      setInitError(message || "Failed to initialize holes");
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  };
+  }, [isSpectator, canInteract, match.house_rules, match.id, numHoles, setLoading]);
 
   const loadData = useCallback(async () => {
     // Abort any pending requests
@@ -135,15 +141,17 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
         scoreMap.set(`${s.hole_id}:${s.profile_id}`, s);
       }
       setScores(scoreMap);
-    } catch (error: any) {
-      if (error.name === 'AbortError' || error.message?.includes('AbortError')) return;
+    } catch (error: unknown) {
+      const errObj = typeof error === 'object' && error !== null ? error as { name?: unknown; message?: unknown } : null;
+      const message = typeof errObj?.message === 'string' ? errObj.message : '';
+      if (errObj?.name === 'AbortError' || message.includes('AbortError')) return;
       console.error("Error loading golf data:", error);
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  }, [match.id, numHoles, isSpectator]);
+  }, [match.id, isSpectator, initializeHoles, setLoading]);
 
   useEffect(() => { 
     loadData(); 

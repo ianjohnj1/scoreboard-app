@@ -29,9 +29,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [connectionError, setConnectionError] = useState(false);
 
   const sanitizeProfile = useCallback((profile: Profile) => {
-    const safeProfile = { ...profile };
-    delete (safeProfile as any).pin_hash;
-    return safeProfile;
+    const safeProfile: Omit<Profile, 'pin_hash'> & { pin_hash?: string | null } = { ...profile };
+    delete safeProfile.pin_hash;
+    return safeProfile as Profile;
   }, []);
 
   const syncCurrentUser = useCallback((profile: Profile) => {
@@ -73,10 +73,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem('sk_session_id');
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('Auth initialization failed:', err);
+      const errObj = typeof err === 'object' && err !== null ? err as { name?: unknown; message?: unknown } : null;
+      const message = typeof errObj?.message === 'string' ? errObj.message : '';
       // Catch net::ERR_NAME_NOT_RESOLVED (TypeError: Failed to fetch)
-      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError' || err.message === 'Supabase unreachable') {
+      if (message.includes('Failed to fetch') || errObj?.name === 'TypeError' || message === 'Supabase unreachable') {
         setConnectionError(true);
       }
     } finally {
@@ -144,6 +146,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Colocated with the provider intentionally; splitting it out only helps Fast
+// Refresh HMR granularity and would mean updating every import site (10+
+// files) for no runtime benefit, in a file CLAUDE.md flags as security-sensitive.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) {

@@ -7,7 +7,7 @@ import Modal from '../Modal';
 import TieBreakerChallenge from '../TieBreakerChallenge';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
-import type { MatchEvent, Profile, PlayerCareerAnalytics } from '../../lib/supabase';
+import type { MatchEvent, MatchTeam, Profile, PlayerCareerAnalytics } from '../../lib/supabase';
 
 type PvPRules = {
   starting_balls_per_team?: number;
@@ -341,7 +341,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
 
       if (teamsError) throw teamsError;
 
-      const sortedNewTeams = [...(newTeams || [])].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      const sortedNewTeams = [...(newTeams || [])].sort((a: MatchTeam, b: MatchTeam) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
       orderedTeams.forEach((oldTeam, index) => {
         const newTeam = sortedNewTeams[index];
         if (newTeam?.id) {

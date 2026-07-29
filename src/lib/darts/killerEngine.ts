@@ -133,7 +133,7 @@ export function applyKillerThrow(
   let activated = false;
   let selfPenalty = false;
   let hitOpponentId: string | null = null;
-  let eliminatedPlayerIds: string[] = [];
+  const eliminatedPlayerIds: string[] = [];
   let winnerProfileId: string | null = null;
 
   if (!currentPlayer.isEliminated && typeof throwData.segment === 'number') {

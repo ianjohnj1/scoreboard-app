@@ -107,8 +107,9 @@ export default function MatchRoomPage() {
         const map = new Map((data || []).map((pr) => [pr.id, { ...pr, pin_hash: null } as Profile]));
         setProfiles(map);
       }
-    } catch (error: any) {
-      if (error.name === 'AbortError' || error.message === 'AbortError') return;
+    } catch (error: unknown) {
+      const errObj = typeof error === 'object' && error !== null ? error as { name?: unknown; message?: unknown } : null;
+      if (errObj?.name === 'AbortError' || errObj?.message === 'AbortError') return;
       console.error("Error loading match:", error);
     } finally {
       if (isMountedRef.current) {
@@ -168,6 +169,9 @@ export default function MatchRoomPage() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
+    // match.id/match.status (not the whole match object, which is a fresh
+    // reference on every refetch) intentionally gate resubscription here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match?.id, match?.status, loadMatch]);
 
   // Update session with match
@@ -183,6 +187,9 @@ export default function MatchRoomPage() {
         .update({ match_id: null })
         .eq('id', sessionId);
     };
+    // match.id only (not the whole match object, which is a fresh reference
+    // on every refetch) intentionally gates this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match?.id, sessionId]);
 
   const handlePause = async () => {
@@ -528,7 +535,7 @@ export default function MatchRoomPage() {
 
 function getSportRoom(match: MatchRoom): React.ComponentType<{ ctx: MatchContext }> {
   const sport = match.sport;
-  const variant = (match.house_rules as any)?.variant;
+  const variant = match.house_rules?.variant;
 
   if (sport === 'golf' && variant === 'chip_off') {
     return ChipOffRoom;

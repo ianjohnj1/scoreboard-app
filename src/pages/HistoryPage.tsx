@@ -22,10 +22,10 @@ export default function HistoryPage() {
       const data = await getRecentMatches(50);
       if (isMounted && !isMounted()) return;
       setMatches(data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error loading history:", err);
       if (isMounted && !isMounted()) return;
-      
+
       if (!navigator.onLine) {
         setError("No internet connection.");
       } else {

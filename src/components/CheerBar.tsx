@@ -29,9 +29,10 @@ export default function CheerBar({ contextId, viewerProfile, quickEmojis = DEFAU
     fireBurst(emoji);
     try {
       await postComment('match', contextId, emoji, 'cheer');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to post cheer:', err);
-      if (!err?.message?.includes('Rate limit')) {
+      const message = typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message) : '';
+      if (!message.includes('Rate limit')) {
         alert('Failed to send cheer. Please try again.');
       }
     }

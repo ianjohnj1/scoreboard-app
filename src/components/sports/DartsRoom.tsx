@@ -76,6 +76,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
     [players, profiles]
   );
   const playerIds = useMemo(() => matchPlayers.map(player => player.id), [matchPlayers]);
+  const playerIdsKey = useMemo(() => playerIds.join('|'), [playerIds]);
 
   const [state, setState] = useState<DartsRuntimeState>(() =>
     buildInitialState(variant, playerIds, countdownRules, killerRules, match.winner_profile_id)
@@ -116,7 +117,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
         if (variant === 'killer') return addPlayerToKillerState(next, id, killerRules);
         return addPlayerToCountdownState(next, id, countdownRules);
       }, prev));
-    } else if (resetKey !== resetKeyRef.current || previousIds.join('|') !== playerIds.join('|')) {
+    } else if (resetKey !== resetKeyRef.current || previousIds.join('|') !== playerIdsKey) {
       setState(buildInitialState(variant, playerIds, countdownRules, killerRules, match.winner_profile_id));
       setPendingMenu(null);
       setUndoStack([]);
@@ -136,7 +137,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
     aroundRules.ringRestriction,
     killerRules.startingLives,
     killerRules.activationRing,
-    playerIds.join('|'),
+    playerIdsKey,
   ]);
 
   useEffect(() => {

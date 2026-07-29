@@ -3,23 +3,16 @@ import { Link } from 'react-router-dom';
 import { Trophy, RotateCcw, AlertCircle, Info, Target, Activity } from 'lucide-react';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import { getSportLabel } from '../lib/matches';
-import { getGlobalLeaderboardData, SEASON_POINT_RULES } from '../lib/stats';
+import { getGlobalLeaderboardData, SEASON_POINT_RULES, type GlobalPlayerStats } from '../lib/stats';
 import UserAvatar from '../components/UserAvatar';
 import ThemeToggle from '../components/ThemeToggle';
 import Modal from '../components/Modal';
-import type { Profile, PlayerCareerStats } from '../lib/supabase';
+import type { Profile } from '../lib/supabase';
 
 type FanBoyEntry = { profile: Profile; total_engagement: number };
 
-type LeaderboardEntry = PlayerCareerStats & {
-  profile: Profile;
-  rankScore: number;
+type LeaderboardEntry = GlobalPlayerStats & {
   best_sport?: string;
-  chip_off_total_chips?: number;
-  chip_off_scoring_chips?: number;
-  best_score_classic?: number;
-  best_score_chip_off?: number;
-  pvp_career_holes?: number;
 };
 
 export default function LeaderboardPage() {
@@ -51,7 +44,7 @@ export default function LeaderboardPage() {
 
       // Aggregate if 'all' sports (Global MVP) is selected
       if (sport === 'all') {
-        const aggregated = processedData.reduce((acc: Record<string, any>, curr) => {
+        const aggregated = processedData.reduce((acc: Record<string, LeaderboardEntry & { max_sport_sp: number }>, curr) => {
           const pid = curr.profile_id;
           if (!acc[pid]) {
             acc[pid] = {
@@ -65,7 +58,7 @@ export default function LeaderboardPage() {
               total_score: 0,
               season_points: 0,
               best_score: null,
-              extra_stats: {}
+              extra_stats: {} as GlobalPlayerStats['extra_stats']
             };
           }
           acc[pid].matches_played += curr.matches_played;
@@ -94,7 +87,7 @@ export default function LeaderboardPage() {
       });
 
       setEntries(processedData.slice(0, 50));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error loading leaderboard:", err);
       if (isMounted && !isMounted()) return;
       

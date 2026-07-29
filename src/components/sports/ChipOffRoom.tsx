@@ -76,8 +76,10 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       if (data) {
         setEvents(data);
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError' || err.message?.includes('AbortError')) return;
+    } catch (err: unknown) {
+      const errObj = typeof err === 'object' && err !== null ? err as { name?: unknown; message?: unknown } : null;
+      const message = typeof errObj?.message === 'string' ? errObj.message : '';
+      if (errObj?.name === 'AbortError' || message.includes('AbortError')) return;
       console.error("Error loading chip-off events:", err);
     } finally {
       if (isMountedRef.current) {

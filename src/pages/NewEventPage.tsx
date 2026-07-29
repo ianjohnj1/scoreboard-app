@@ -63,7 +63,7 @@ export default function NewEventPage() {
       };
       const event = isEditMode && id ? await updateEvent(id, input) : await createEvent(input);
       navigate(`/events/${event.id}`, { replace: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(`Failed to ${isEditMode ? 'update' : 'create'} event:`, err);
       setError(`Failed to ${isEditMode ? 'save changes' : 'create event'}. Please try again.`);
     } finally {

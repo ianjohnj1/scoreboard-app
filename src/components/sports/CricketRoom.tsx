@@ -6,7 +6,7 @@ import UserAvatar from '../UserAvatar';
 import { Trophy, RotateCcw, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
-import type { CricketInnings, CricketPlayerStats, Profile } from '../../lib/supabase';
+import type { CricketInnings, CricketPlayerStats, Profile, MatchEvent } from '../../lib/supabase';
 
 type DismissalMethod = 'Bowled' | 'Caught' | 'LBW' | 'Run Out' | 'Stumped' | 'Hit Wicket' | 'Caught & Bowled';
 
@@ -25,7 +25,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
   const [innings, setInnings] = useState<CricketInnings | null>(null);
   const [playerStats, setPlayerStats] = useState<Map<string, CricketPlayerStats>>(new Map());
-  const [recentEvents, setRecentEvents] = useState<any[]>([]);
+  const [recentEvents, setRecentEvents] = useState<MatchEvent[]>([]);
   const [partnership, setPartnership] = useState({ runs: 0, balls: 0 });
   const [showWicketModal, setShowWicketModal] = useState(false);
   const [showBowlerModal, setShowBowlerModal] = useState(false);
@@ -86,6 +86,31 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
     }
   }, [match.id]);
 
+  const firstTeamId = teams[0]?.id;
+  const secondTeamId = teams[1]?.id;
+
+  const startFirstInnings = useCallback(async () => {
+    setLoading(true);
+    try {
+      // In Backyard mode, we don't have teams, so we leave these as null
+      const { data: newInnings, error } = await supabase.from('cricket_innings').insert({
+        match_id: match.id,
+        innings_number: 1,
+        batting_team_id: ctx.isBackyard ? null : (firstTeamId || null),
+        bowling_team_id: ctx.isBackyard ? null : (secondTeamId || null),
+      }).select().single();
+
+      if (error) {
+        console.error("Failed to start first innings:", error);
+        return;
+      }
+
+      setInnings(newInnings);
+    } finally {
+      setLoading(false);
+    }
+  }, [match.id, ctx.isBackyard, firstTeamId, secondTeamId]);
+
   const loadInnings = useCallback(async () => {
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
@@ -140,38 +165,16 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
           await startFirstInnings();
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Caught error in loadInnings:", err);
     } finally {
       if (isMountedRef.current && requestId === loadRequestIdRef.current) {
         setLoading(false);
       }
     }
-  }, [match.id, loadRecentEvents]);
+  }, [match.id, loadRecentEvents, startFirstInnings]);
 
-  const startFirstInnings = async () => {
-    setLoading(true);
-    try {
-      // In Backyard mode, we don't have teams, so we leave these as null
-      const { data: newInnings, error } = await supabase.from('cricket_innings').insert({
-        match_id: match.id,
-        innings_number: 1,
-        batting_team_id: ctx.isBackyard ? null : (teams[0]?.id || null),
-        bowling_team_id: ctx.isBackyard ? null : (teams[1]?.id || null),
-      }).select().single();
-
-      if (error) {
-        console.error("Failed to start first innings:", error);
-        return;
-      }
-      
-      setInnings(newInnings);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { 
+  useEffect(() => {
     loadInnings(); 
   }, [loadInnings]);
 
@@ -269,7 +272,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
       }
 
       // Update innings
-      const inningsUpdate: Record<string, any> = {
+      const inningsUpdate: Record<string, number | string | null> = {
         total_runs: innings.total_runs + runs,
         updated_at: new Date().toISOString()
       };
@@ -301,7 +304,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
       }
       const newRuns = (stat?.bat_runs || 0) + batterRuns;
       
-      const batterUpdate: Record<string, any> = {
+      const batterUpdate: Record<string, number | boolean> = {
         bat_runs: newRuns,
         bat_balls: (stat?.bat_balls || 0) + (countsAsBall ? 1 : 0),
       };
@@ -386,7 +389,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
 
       // Update innings wickets & clear batter
       let nextBatter1Id: string | null = innings.current_batter2_id;
-      let nextBatter2Id: string | null = null;
+      const nextBatter2Id: string | null = null;
 
       if (ctx.isBackyard) {
           // Auto-rotate batter based on join order (batting_order)
@@ -550,8 +553,8 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         
         let team1Runs = 0;
         let team2Runs = 0;
-        let team1Id = ctx.teams[0]?.id;
-        let team2Id = ctx.teams[1]?.id;
+        const team1Id = ctx.teams[0]?.id;
+        const team2Id = ctx.teams[1]?.id;
 
         if (allInnings) {
           allInnings.forEach(inn => {
@@ -740,8 +743,8 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                   ) : (
                     [...recentEvents].reverse().map((event) => {
                       const isWicket = event.event_type === 'wicket';
-                      const runs = event.event_data?.runs;
-                      const extra = event.event_data?.extra;
+                      const runs = event.event_data?.runs as number | undefined;
+                      const extra = event.event_data?.extra as string | undefined;
                       const label = isWicket ? 'W' : extra ? `${runs}${extra.substring(0, 2).toUpperCase()}` : runs;
                       
                       return (

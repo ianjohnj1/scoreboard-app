@@ -35,6 +35,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Colocated with the provider intentionally; splitting it out only helps Fast
+// Refresh HMR granularity and would mean updating every import site for no
+// runtime benefit.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (context === undefined) {

@@ -9,19 +9,19 @@ import ThemeToggle from '../components/ThemeToggle';
 import QRCodeModal from '../components/QRCodeModal';
 import Modal from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
-import { getRecentMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel, isMatchStale } from '../lib/matches';
+import { getRecentMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel, isMatchStale, type LiveActivityEntry } from '../lib/matches';
 import { getUpcomingEvents, getEventRsvps } from '../lib/events';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
-import type { Event, Profile } from '../lib/supabase';
+import type { Event, Profile, MatchRoom } from '../lib/supabase';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { currentUser, isAdmin, loading: authLoading } = useAuth();
-  const [activeMatches, setActiveMatches] = useState<any[]>([]);
-  const [recentMatches, setRecentMatches] = useState<any[]>([]);
-  const [liveActivity, setLiveActivity] = useState<any[]>([]);
-  const [topStats] = useState<any[]>([]);
-  const [qrMatch, setQrMatch] = useState<any | null>(null);
+  const [activeMatches, setActiveMatches] = useState<MatchRoom[]>([]);
+  const [recentMatches, setRecentMatches] = useState<MatchRoom[]>([]);
+  const [liveActivity, setLiveActivity] = useState<LiveActivityEntry[]>([]);
+  const [topStats] = useState<{ label: string; player: { display_name: string; avatar_color: string; avatar_url: string | null }; value: string | number }[]>([]);
+  const [qrMatch, setQrMatch] = useState<MatchRoom | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -102,10 +102,10 @@ export default function Dashboard() {
       setRecentMatches((recent || []).filter(Boolean));
       setActiveMatches((active || []).filter(match => match && !isMatchStale(match)));
       setLiveActivity((live || []).filter(Boolean));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error loading dashboard data:", err);
       if (isMounted && !isMounted()) return;
-      
+
       // Handle network errors gracefully
       if (!navigator.onLine) {
         setError("No internet connection. Please check your network.");
@@ -136,11 +136,12 @@ export default function Dashboard() {
       setActiveMatches(prev => prev.filter(match => match?.id !== matchId));
       setLiveActivity(prev => prev.filter(entry => entry?.match?.id !== matchId && entry?.session?.id !== matchId));
       await loadDashboardData();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error deleting match:", error);
-      const message = error.message || "Unknown error";
-      const code = error.code || "";
-      
+      const errObj = typeof error === 'object' && error !== null ? error as { message?: unknown; code?: unknown } : null;
+      const message = typeof errObj?.message === 'string' ? errObj.message : "Unknown error";
+      const code = typeof errObj?.code === 'string' ? errObj.code : "";
+
       if (code === '42501') {
         alert("Permission Denied: You don't have permission to delete this match.");
       } else {
@@ -489,7 +490,7 @@ export default function Dashboard() {
 function MatchCard({
   match, onQR, onDelete, canDelete, isDeleting, hideLiveBadge
 }: {
-  match: any; onQR: () => void; onDelete: () => void; canDelete: boolean; isDeleting: boolean;
+  match: MatchRoom | null | undefined; onQR: () => void; onDelete: () => void; canDelete: boolean; isDeleting: boolean;
   hideLiveBadge?: boolean;
 }) {
   const navigate = useNavigate();
