@@ -20,6 +20,7 @@ interface CricketHouseRules {
 
 export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   const { match, teams, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
+  const canInteract = match.status === 'active' || isAdmin;
   const houseRules = (match.house_rules || {}) as CricketHouseRules;
 
   const [innings, setInnings] = useState<CricketInnings | null>(null);
@@ -483,7 +484,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   };
 
   const updateBatter = async (slot: 1 | 2, profileId: string) => {
-    if (!innings) return;
+    if (!innings || !canInteract) return;
     
     // In backyard mode, if the current bowler is being selected as batter, complete their over first
     if (ctx.isBackyard && profileId === currentBowler?.id && (innings.balls % 6 !== 0)) {
@@ -496,7 +497,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   };
 
   const updateBowler = async (profileId: string) => {
-    if (!innings) return;
+    if (!innings || !canInteract) return;
 
     // In backyard mode, if changing bowler mid-over, complete the over for the previous bowler
     if (ctx.isBackyard && currentBowler && profileId !== currentBowler.id && (innings.balls % 6 !== 0)) {
@@ -820,7 +821,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
               stat={currentBatter1 ? playerStats.get(currentBatter1.id) : undefined}
               type="batter"
               isFacing={true}
-              disabled={isSpectator}
+              disabled={isSpectator || !canInteract}
             />
             {!ctx.isBackyard && (
               <ActivePlayerOverlay
@@ -830,7 +831,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                 onChange={id => updateBatter(2, id)}
                 stat={currentBatter2 ? playerStats.get(currentBatter2.id) : undefined}
                 type="batter"
-                disabled={isSpectator}
+                disabled={isSpectator || !canInteract}
               />
             )}
           </div>
@@ -923,7 +924,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
                 onChange={updateBowler}
                 stat={currentBowler ? playerStats.get(currentBowler.id) : undefined}
                 type="bowler"
-                disabled={isSpectator}
+                disabled={isSpectator || !canInteract}
               />
             </div>
           )}
@@ -1152,6 +1153,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
             <select
               value={innings?.current_bowler_id || ''}
               onChange={e => updateBowler(e.target.value)}
+              disabled={!canInteract}
               className="input-field"
             >
               <option value="">Select bowler...</option>

@@ -157,7 +157,7 @@ export default function DartsRoom({ ctx }: { ctx: MatchContext }) {
   const canUndo = canInteract && undoStack.length > 0;
 
   const persistThrow = async (throwData: DartsThrow) => {
-    if (!currentPlayer || loading || state.winner) return;
+    if (!currentPlayer || loading || state.winner || !canInteract) return;
 
     const previousState = cloneState(state);
     let result;

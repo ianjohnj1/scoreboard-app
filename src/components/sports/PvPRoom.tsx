@@ -377,6 +377,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
     winningTeamId: string;
     winningPlayerId: string;
   }) => {
+    if (!canInteract || loading) return;
     setLoading(true);
     try {
       await recordEvent(

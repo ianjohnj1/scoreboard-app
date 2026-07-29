@@ -17,6 +17,7 @@ const SCORE_LABELS: Record<number, { label: string; color: string }> = {
 
 export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
   const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
+  const canInteract = match.status === 'active' || isAdmin;
 
   const [holes, setHoles] = useState<GolfHole[]>([]);
   const [scores, setScores] = useState<Map<string, GolfScore>>(new Map()); // key: `${holeId}:${profileId}`
@@ -44,7 +45,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
     .filter(Boolean) as Profile[];
 
   const initializeHoles = async () => {
-    if (isSpectator || loading) return;
+    if (isSpectator || loading || !canInteract) return;
     setLoading(true);
     setInitError(null);
     try {
@@ -169,7 +170,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
   }, [match.id, loadData]);
 
   const setScore = async (holeId: string, profileId: string, strokes: number | null, holeInOne = false) => {
-    if (!currentUser || loading) return;
+    if (!currentUser || loading || !canInteract) return;
     setLoading(true);
     try {
       const key = `${holeId}:${profileId}`;
@@ -262,7 +263,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                   </p>
                 </div>
                 
-                {!isSpectator && !isTvDisplayMode && (match.status !== 'completed' || isAdmin) && (
+                {!isSpectator && !isTvDisplayMode && canInteract && (
                   <div className="space-y-3">
                     <button
                       onClick={initializeHoles}
@@ -331,8 +332,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
                       <td key={player.id} className="px-2 py-2.5 text-center">
                         <button
                           onClick={() => {
-                            if (isSpectator || isTvDisplayMode) return;
-                            if (match.status === 'completed' && !isAdmin) return;
+                            if (isSpectator || isTvDisplayMode || !canInteract) return;
                             setSelectedHole(hole);
                             setSelectedPlayer(player);
                           }}
@@ -389,7 +389,7 @@ export default function GolfRoom({ ctx }: { ctx: MatchContext }) {
       </div>
 
       {/* Score input sheet */}
-      {selectedHole && selectedPlayer && !isSpectator && (match.status !== 'completed' || isAdmin) && (
+      {selectedHole && selectedPlayer && !isSpectator && canInteract && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end">
           <div className="w-full bg-charcoal-800 rounded-t-3xl border-t border-charcoal-700 p-6 safe-bottom shadow-2xl">
             <div className="flex items-center justify-between mb-6">
