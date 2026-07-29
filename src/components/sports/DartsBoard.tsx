@@ -49,6 +49,9 @@ function getPulseClass(roles: DartsHighlightRole[] | undefined) {
   return hasRole(roles, 'recent') || hasRole(roles, 'active') ? 'animate-dartboard-pulse' : '';
 }
 
+const VIEWBOX_MIN = -24;
+const VIEWBOX_SIZE = 448;
+
 export default function DartsBoard({
   mode,
   disabled = false,
@@ -60,12 +63,15 @@ export default function DartsBoard({
   onMultiplierSelect,
   onDismissMultiplier,
 }: DartsBoardProps) {
-  const menuLeft = pendingMenu ? `${(pendingMenu.x / 400) * 100}%` : '50%';
-  const menuTop = pendingMenu ? `${(pendingMenu.y / 400) * 100}%` : '50%';
+  const menuLeft = pendingMenu ? `${((pendingMenu.x - VIEWBOX_MIN) / VIEWBOX_SIZE) * 100}%` : '50%';
+  const menuTop = pendingMenu ? `${((pendingMenu.y - VIEWBOX_MIN) / VIEWBOX_SIZE) * 100}%` : '50%';
 
   return (
     <div className="relative mx-auto aspect-square w-full max-w-[420px]">
-      <svg viewBox="0 0 400 400" className="h-full w-full drop-shadow-[0_16px_32px_rgba(0,0,0,0.35)]">
+      <svg
+        viewBox={`${VIEWBOX_MIN} ${VIEWBOX_MIN} ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
+        className="h-full w-full drop-shadow-[0_16px_32px_rgba(0,0,0,0.35)]"
+      >
         <circle cx={DARTBOARD_CENTER} cy={DARTBOARD_CENTER} r={DARTBOARD_RADIUS} fill="#111827" />
 
         {DARTBOARD_ORDER.map((segment, index) => {
