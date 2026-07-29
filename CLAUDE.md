@@ -56,6 +56,8 @@ Only cricket (`cricket_innings`, `cricket_player_stats`) and golf (`golf_holes`,
 
 Every scoring UI is `({ ctx }: { ctx: MatchContext })`, with `MatchContext` exported from `src/pages/MatchRoomPage.tsx`. Rooms must honour `ctx.isSpectator` / `ctx.isTvDisplayMode` (disable all input) and refuse writes unless `match.status === 'active'` or `ctx.isAdmin`.
 
+Guard the write-triggering function itself, not just the JSX that renders its button — a 2026-07-30 audit found five rooms (ChipOffRoom, GolfRoom, CricketRoom, DartsRoom, PvPRoom) where a handler like `setScore()`/`persistThrow()`/`handleTieBreakConfirm()` had no internal check at all, trusting the UI alone to hide the affordance; pausing a match independently of that UI state (e.g. via the header menu) let scoring continue. Two of them also used `match.status !== 'completed'` as an "is this match live" proxy, which is wrong because it's also true while `'paused'` — the correct check is always `match.status === 'active' || ctx.isAdmin`.
+
 Variants live in `house_rules.variant`, not in `sport`:
 
 | sport | variant | component |
@@ -68,6 +70,8 @@ Variants live in `house_rules.variant`, not in `sport`:
 **Adding a sport or variant touches four places**: `getSportRoom()` in `MatchRoomPage.tsx`, the `sportRooms` map *and* the golf-variant branch in `SpectatorPage.tsx`, `getSportIcon()`/`getSportLabel()` in `lib/matches.ts`, and the `SPORTS` / setup steps in `NewMatchPage.tsx`. The two dispatch tables drift easily — spectator view silently falling back to `CustomRoom` is the usual symptom.
 
 Darts sub-games are pure reducers (`createXState` / `applyXThrow` over `DartsRuntimeState`) in `src/lib/darts/`, kept separate from the SVG board geometry in `board.ts`.
+
+`DartsBoard.tsx`'s SVG `viewBox` is padded to `-24 -24 448 448`, not the `0 0 400 400` the board's own `DARTBOARD_CENTER`/`DARTBOARD_RADIUS` constants (200/190, in `board.ts`) would suggest — number labels sit at radius 205, so a tight viewBox clips them at 12/6 o'clock. The multiplier-menu popup's position is computed from that same `viewBox` origin/size (`VIEWBOX_MIN`/`VIEWBOX_SIZE` in `DartsBoard.tsx`); if the padding ever changes, that math must change with it or the popup lands off-target.
 
 ### Shared building blocks — reach for these before writing a new one
 
