@@ -240,11 +240,37 @@ before 100 users is the P1 list below** — in particular the live
 - **Match deletion is admin-only, even for the creator.** Currently by
   design (see `deleteMatch()` in `src/lib/matches.ts`), but worth revisiting
   — a creator may reasonably expect to delete their own not-yet-played match.
-- **No automated test suite.** No test runner is installed; verification is
-  `npm run typecheck` + `npm run lint` + manual browser QA. This gets more
-  expensive with every item above: the P0 leaderboard rewrite and the
-  `sequence_num` change both touch event-sourced score logic with no
-  regression net under them. Worth installing a runner before starting P0-2.
+- ~~**No automated test suite.**~~ **Partially done 2026-07-30.** Vitest is
+  installed (`npm test`), covering pure logic with no Supabase/DOM
+  dependency: the three darts sub-game reducers
+  (`src/lib/darts/*Engine.test.ts`), the dashboard status partition helpers
+  and sport/variant label lookups (`src/lib/matches.test.ts`), and the
+  season-points/grouping helpers from the P0 leaderboard rewrite
+  (`src/lib/stats.test.ts`) — 47 tests total. See the Testing section in
+  `CLAUDE.md` for what's covered and why.
+
+  Still gaps, in rough priority order:
+  - **`match_event_points()`**, the Postgres function gating what counts
+    toward the leaderboard, has no repeatable test harness. It was
+    specifically refactored to be unit-testable via synthetic jsonb
+    (`SELECT match_event_points(...)` with no rows written) and was run
+    ad hoc (39 cases) during the P0 rewrite, but that harness was never
+    checked in. Needs pgTAP or a plain SQL script run via `execute_sql`
+    against a Supabase branch. Highest priority: 11 of 14 event types have
+    zero live-data coverage today, so a regression in an untouched branch
+    would ship silently.
+  - **`getGlobalLeaderboardData()`'s reduction loop** (placement, milestone
+    SP, chip-off team ordering) is still untested — it's tightly coupled to
+    chained Supabase calls, so testing it means either extracting the
+    reduction into a pure function or building a fake PostgREST client.
+  - **No RLS/policy regression tests.** Given the repo's history (two
+    separate admin-override RLS gaps, the original `USING (true)` audit —
+    see `docs/rls-ground-rules.md`), a scripted smoke test against a
+    Supabase branch would catch this class of bug before it reaches the
+    shared live project.
+  - **No component/e2e tests and no CI.** The manual browser-preview QA
+    loop is still the only verification for anything UI-facing, and
+    `npm test` isn't wired into any CI check yet (there is no CI).
 - **Sport/variant dispatch tables can drift silently.** Adding a sport or
   variant touches four places (`getSportRoom()` in `MatchRoomPage.tsx`; the
   `sportRooms` map *and* golf-variant branch in `SpectatorPage.tsx`;

@@ -10,11 +10,13 @@ npm run dev:host     # same, exposed on the LAN for phone testing
 npm run typecheck    # tsc --noEmit -p tsconfig.app.json
 npm run lint         # eslint .
 npm run build        # vite build -> dist/
+npm test             # vitest run -- unit tests, see Testing below
+npm run test:watch   # vitest (watch mode)
 ```
 
 - **`npm run build` does not typecheck** — it's `vite build` alone. `npm run typecheck` is the real gate; run it after any non-trivial edit.
 - **Lint is clean** (0 errors, 0 warnings, as of 2026-07-30 — it used to sit at ~66 errors/~9 warnings, mostly `@typescript-eslint/no-explicit-any`). Treat any new error or warning as a real regression, not baseline noise, and fix it rather than reaching for `any`. A handful of `react-hooks/exhaustive-deps` and `react-refresh/only-export-components` warnings are permanently silenced with inline `eslint-disable-next-line` comments where the "fix" would be worse than the warning (see the Realtime note below, and `useAuth`/`useTheme` in `AuthContext.tsx`/`ThemeContext.tsx`) — read the comment before touching those lines rather than deleting it to chase a clean count.
-- **There is no test suite** — no test runner is installed. Verification means typecheck + lint + actually driving the app in the browser preview.
+- **There is a unit test suite (Vitest, added 2026-07-30) but it's narrow** — see Testing below. It covers pure logic only; there's still no integration/component/e2e coverage and no CI wired up to run it. Verification for anything outside that pure-logic slice is still typecheck + lint + actually driving the app in the browser preview.
 - **Deploying is a separate action from committing.** Production (Cloudflare Pages) has no git integration; `git push` never updates the live site. See `.claude/skills/deploy-production/SKILL.md`.
 - For browser QA, log in as the existing test account (`claudetester` / PIN `1234`) rather than signing up a new one — every signup becomes a real profile on the shared leaderboard. If the app is already logged in, keep using that session.
 - `dev:host` exists for testing on a phone over the LAN; both devices must be on the same Wi-Fi and the host firewall must allow the port.
@@ -22,6 +24,24 @@ npm run build        # vite build -> dist/
 ## Environment
 
 `.env` supplies `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. There is no local Supabase stack and no `supabase/config.toml` — the app and the migrations both point at one shared live project, so schema changes are immediately real for every user.
+
+## Testing
+
+Vitest (`vitest.config.ts`, deliberately separate from `vite.config.ts` — the test runner doesn't need the dev server's port or the React plugin), `environment: 'node'`, no DOM. Tests are colocated as `*.test.ts` next to the file they cover (`src/lib/darts/countdownEngine.test.ts`, not a parallel `__tests__` tree).
+
+Coverage today is deliberately narrow: **pure TypeScript logic with no Supabase or DOM dependency**, chosen because it's the highest-value/lowest-effort slice and because this codebase's actual bug history (the `sequence_num` write race, the twice-found admin-override RLS gap, the `cards_round`/`tt_set` event-routing drop) was never going to be caught by component or e2e tests anyway.
+
+- `src/lib/darts/*Engine.test.ts` — the countdown/around-the-world/killer reducers exercise bust/checkout/double-out rules, target advancement, activation/elimination, and turn rotation including skip-the-eliminated-player rotation. These were previously verified only by playing a full game manually.
+- `src/lib/matches.test.ts` — `getMatchDisplayStatus`/`isMatchStale`, the single source of truth for the dashboard's live/paused/done partition (see Dashboard section below); `generateRoomCode`'s format; `getSportIcon`/`getSportLabel`, which are two of the four places sport/variant dispatch has to stay in sync (see the "touches four places" note below — these tests don't cover the other three).
+- `src/lib/stats.test.ts` — `calculatePlacementSP` and `groupByMatchId` (the P0 perf rewrite from 2026-07-30, previously verified only by a one-off differential script that wasn't checked in).
+
+**Modules under test import the real `supabase` client at module load** (`matches.ts`, `stats.ts` both `import { supabase } from './supabase'` at the top), and `createClient()` throws immediately if the URL/key are empty. Rather than depend on `.env` being present for unit tests to even load, `matches.test.ts` and `stats.test.ts` both `vi.mock('./supabase', ...)` with a stub before importing — keep doing this for any new test file that imports a module with that same top-level import, rather than relying on `.env` being populated.
+
+**Not covered, on purpose, for now:**
+- `getGlobalLeaderboardData()` in `stats.ts` — the full placement/milestone/season-points reduction loop. It's high-value to test but tightly coupled to chained Supabase query calls; testing it properly needs either extracting the reduction into a pure function or a fake PostgREST client, either of which is a real design decision, not a "first tests" addition.
+- `match_event_points()`, the Postgres function that actually gates what counts toward the leaderboard (see Stats pipeline below) — needs a SQL-level test harness (pgTAP or a plain script through `execute_sql` against a Supabase branch), not Vitest. Still todo.
+- Anything requiring RLS/live-database behavior (the class of bug `docs/rls-ground-rules.md` was written about) — needs a Supabase branch, not a unit test.
+- Components, pages, and e2e flows — the existing browser-preview QA loop is still the verification path for these.
 
 ## Repo hygiene — external tooling history
 

@@ -227,7 +227,7 @@ export async function determineAndSaveWinnerIfMissing(matchId: string): Promise<
 // events per match that's ~59M comparisons by 600 completed matches and ~163M
 // by 1000, i.e. seconds of blocked main thread on a phone. Grouping up front
 // makes the loop linear in total rows instead.
-function groupByMatchId<T extends { match_id: string }>(rows: T[] | null): Map<string, T[]> {
+export function groupByMatchId<T extends { match_id: string }>(rows: T[] | null): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
   for (const row of rows || []) {
     const bucket = grouped.get(row.match_id);
