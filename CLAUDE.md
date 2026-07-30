@@ -37,9 +37,12 @@ Coverage today is deliberately narrow: **pure TypeScript logic with no Supabase 
 
 **Modules under test import the real `supabase` client at module load** (`matches.ts`, `stats.ts` both `import { supabase } from './supabase'` at the top), and `createClient()` throws immediately if the URL/key are empty. Rather than depend on `.env` being present for unit tests to even load, `matches.test.ts` and `stats.test.ts` both `vi.mock('./supabase', ...)` with a stub before importing — keep doing this for any new test file that imports a module with that same top-level import, rather than relying on `.env` being populated.
 
+**SQL-level tests are separate from the Vitest suite.** `supabase/tests/database/match_event_points.test.sql` is a pgTAP file (39 assertions) covering all 14 branches of `match_event_points()` — the Postgres function that decides what a `match_event` is worth toward the leaderboard (see Stats pipeline below) — plus `darts_event_score()`'s single-throw/darts-array paths and the `point`/`score` `amount || 1` JS-falsy quirk. It's pure SELECTs against synthetic jsonb, wrapped in one transaction that always rolls back, so it writes nothing durable regardless of where it runs. Nothing runs it automatically yet:
+- **Locally**: needs `supabase start` (Docker) — there's no local stack today (see Environment above) — then `supabase test db`.
+- **Against a project**: needs the `pgtap` extension enabled there first (`create extension if not exists pgtap with schema extensions;`), then the file executed via `psql` or the Supabase MCP's `execute_sql`. Treat enabling an extension on the shared live project as a live-database change requiring the same care as any other schema change, even though this particular file only reads.
+
 **Not covered, on purpose, for now:**
 - `getGlobalLeaderboardData()` in `stats.ts` — the full placement/milestone/season-points reduction loop. It's high-value to test but tightly coupled to chained Supabase query calls; testing it properly needs either extracting the reduction into a pure function or a fake PostgREST client, either of which is a real design decision, not a "first tests" addition.
-- `match_event_points()`, the Postgres function that actually gates what counts toward the leaderboard (see Stats pipeline below) — needs a SQL-level test harness (pgTAP or a plain script through `execute_sql` against a Supabase branch), not Vitest. Still todo.
 - Anything requiring RLS/live-database behavior (the class of bug `docs/rls-ground-rules.md` was written about) — needs a Supabase branch, not a unit test.
 - Components, pages, and e2e flows — the existing browser-preview QA loop is still the verification path for these.
 

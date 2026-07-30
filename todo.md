@@ -249,16 +249,18 @@ before 100 users is the P1 list below** — in particular the live
   (`src/lib/stats.test.ts`) — 47 tests total. See the Testing section in
   `CLAUDE.md` for what's covered and why.
 
+  ~~`match_event_points()` has no repeatable test harness.~~ **Done
+  2026-07-30**: `supabase/tests/database/match_event_points.test.sql` is a
+  checked-in pgTAP file (39 assertions, all 14 branches plus
+  `darts_event_score()`'s single-throw/darts-array paths and the
+  `point`/`score` falsy-zero quirk). Not yet wired to run anywhere — no
+  local Supabase stack to `supabase test db` against (see Environment in
+  `CLAUDE.md`), and running it against a project needs the `pgtap`
+  extension enabled there first. Next step is deciding where it actually
+  runs (local Docker stack vs. a Supabase branch vs. CI), not writing more
+  of it.
+
   Still gaps, in rough priority order:
-  - **`match_event_points()`**, the Postgres function gating what counts
-    toward the leaderboard, has no repeatable test harness. It was
-    specifically refactored to be unit-testable via synthetic jsonb
-    (`SELECT match_event_points(...)` with no rows written) and was run
-    ad hoc (39 cases) during the P0 rewrite, but that harness was never
-    checked in. Needs pgTAP or a plain SQL script run via `execute_sql`
-    against a Supabase branch. Highest priority: 11 of 14 event types have
-    zero live-data coverage today, so a regression in an untouched branch
-    would ship silently.
   - **`getGlobalLeaderboardData()`'s reduction loop** (placement, milestone
     SP, chip-off team ordering) is still untested — it's tightly coupled to
     chained Supabase calls, so testing it means either extracting the
