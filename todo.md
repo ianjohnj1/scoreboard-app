@@ -28,24 +28,35 @@ nothing prunes or caches, so it arrives with time even at flat user count. At
 20 users playing ~8 matches/week that's ~400 matches/year, which reaches the
 degradation zone in about a year with zero growth.
 
-What breaks first, in order (item 1's compute half is fixed as of
-2026-07-30 — see P0):
+**All four P0 items are done as of 2026-07-30** — see the P0 section below
+for what shipped and how each was verified. What broke first, in order, and
+how each was addressed:
 
-1. `getGlobalLeaderboardData()` payload and client compute (P0-1, P0-2).
-2. Free-plan egress — ~6.9 KB per cumulative match per leaderboard load, so
-   5 GB/mo allows ~2,460 loads at 300 cumulative matches, ~740 at 1,000.
-3. Postgres connection pool — once leaderboard queries hold a connection for
-   seconds, one slow page becomes app-wide errors.
+1. `getGlobalLeaderboardData()` client compute — was O(matches × events);
+   fixed by grouping child rows into a `Map` before the per-match loop.
+2. `getGlobalLeaderboardData()` payload/egress — was downloading every
+   `match_event` ever recorded on every load; fixed by pushing the per-event
+   reduction into a Postgres view, cutting the per-match cost 42x.
+3. Sport-tab switching and realtime-triggered reloads re-running the whole
+   pull — fixed by fetching once and deriving per-tab views client-side, plus
+   debouncing the realtime refresh.
+4. `recordEvent()`'s sequence-number race capping concurrent scorers per
+   match at one — fixed by moving `sequence_num` assignment into a
+   `BEFORE INSERT` trigger serialized per-match with an advisory lock.
 
-Realtime concurrency (200) and DB size (~4,300 matches' worth of events) are
-not binding before those. The free tier's 7-day inactivity auto-pause is a
+Free-plan egress now allows roughly 25x more leaderboard loads per cumulative
+match than before item 2 (measured: 34,376 → 2,248 bytes gzipped per load on
+the live dataset). Postgres connection pool pressure eases with it, since
+leaderboard queries no longer hold a connection for seconds. Realtime
+concurrency (200 conns) and DB size (~4,300 matches' worth of events) were
+never binding before those. The free tier's 7-day inactivity auto-pause is a
 separate availability limit that no code change fixes.
 
-P0-1 and P0-2 together are what make 100 users viable **without** immediately
-moving to Pro — server-side aggregation cuts the per-load payload from
-megabytes to a few KB. Pro ($25/mo, 250 GB egress, no auto-pause) is the
-right call once the user base is real, but it buys headroom rather than
-substituting for these fixes.
+None of this replaces Pro ($25/mo, 250 GB egress, no auto-pause) once the
+user base is real — it buys headroom so that upgrade is a choice made from
+comfortable footing, not a fix for something already breaking. **What's left
+before 100 users is the P1 list below** — in particular the live
+`rpc_login` account-takeover hole, which needs zero user growth to matter.
 
 ## P0 — blocks 100 users
 
@@ -88,19 +99,47 @@ substituting for these fixes.
   cut payload perhaps another 5-10x (one row per player per sport rather
   than per match) — worth revisiting only if egress becomes binding again,
   and only behind a test suite.
-- **Every sport-tab switch re-runs the whole pull.** `loadLeaderboard` in
-  `src/pages/LeaderboardPage.tsx` depends on `sport`, so browsing the nine
-  tabs is nine full fetches. The `leaderboard-live` channel also triggers a
-  complete recompute on *any* match completion anywhere. Fix: fetch once,
-  filter client-side per tab; debounce the realtime-driven refresh.
-- **`recordEvent()` has a sequence-number race.** `src/lib/matches.ts` does a
-  `count` then inserts `count + 1` against `UNIQUE (match_id, sequence_num)`.
-  Two people scoring the same match simultaneously both read N, both write
-  N+1, one gets a unique violation. It fails loudly rather than corrupting
-  data, but it caps concurrent scorers per match at one — which bites far
-  more often at 100 users than at 20. Fix: assign `sequence_num` server-side
-  (a `BEFORE INSERT` trigger using `max()+1` scoped to the match, or move the
-  whole insert into an RPC). Also removes a round trip per scored event.
+- ~~**Every sport-tab switch re-runs the whole pull.**~~ **Done 2026-07-30.**
+  `loadLeaderboard` in `src/pages/LeaderboardPage.tsx` now fetches
+  `rawStats` once, with no `sport` dependency; filtering, the
+  `sport === 'all'` cross-sport aggregation, and sorting all moved into a
+  `useMemo` keyed on `[rawStats, sport]`, so switching tabs is a synchronous
+  client-side recompute with zero network calls. Verified by instrumenting
+  `performance.getEntriesByType('resource')` in the browser preview and
+  clicking through five tabs (Global MVP → Cricket → Golf → Darts →
+  Basketball → back to Global MVP): the only Supabase requests observed
+  were the pre-existing 30s session heartbeat and lazy avatar image loads,
+  zero calls to `match_rooms`/`leaderboard_match_player_scores`/`profiles`
+  after the initial mount. Rendered values unchanged throughout. The
+  `leaderboard-live` realtime subscription is also now debounced 1500ms
+  (`refreshTimeoutRef`, mirroring the pattern already used in
+  `GolfRoom`/`ChipOffRoom`/`CricketRoom` for their own realtime channels),
+  so a burst of match completions collapses into one reload instead of one
+  per event. This also let the `refreshKey` state/effect indirection be
+  removed in favour of calling `loadLeaderboard()` directly.
+- ~~**`recordEvent()` has a sequence-number race.**~~ **Done 2026-07-30.**
+  `sequence_num` is now assigned by a `BEFORE INSERT` trigger
+  (`set_match_event_sequence_num()`,
+  `20260730171039_server_side_match_event_sequence_num.sql`) instead of a
+  client-side `SELECT count(*)` then `INSERT count+1` - the same race
+  existed twice, independently, in `recordEvent()` (`src/lib/matches.ts`)
+  and in `CricketRoom.tsx`'s `completeOverEarly()` bulk dot-ball insert.
+  The trigger takes a transaction-scoped advisory lock keyed by `match_id`
+  (`pg_advisory_xact_lock(hashtextextended(...))`) so concurrent inserts
+  serialize per-match without a global bottleneck, then computes
+  `max(sequence_num)+1` under that lock. Verified three ways: (1) a scratch
+  TEMP table confirmed Postgres advances row visibility between rows of the
+  *same* multi-row INSERT, so `completeOverEarly()`'s bulk insert gets
+  correctly incrementing values in one statement (4 rows in one group came
+  back 1,2,3,4, an unrelated group's row came back 1); (2) a real multi-row
+  insert against a live match continued correctly from the existing max
+  (311 → 312, 313) and a client-supplied stale value (9999) was silently
+  overwritten with the correct next value (314), both cleaned up
+  immediately after; (3) end-to-end through the actual app UI - three rapid
+  scoring taps on a live practice match produced clean sequential
+  `sequence_num` values 1, 2, 3 with correct scores and no console errors,
+  confirmed against the database, then the scratch match was cleaned up.
+  Both call sites no longer compute or send `sequence_num` at all.
 
 ## P1 — needed at or before 100 users
 
