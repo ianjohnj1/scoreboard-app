@@ -196,10 +196,37 @@ hole — the item that needed zero user growth to matter — is fixed as of
   real `pin_hash` immediately, so no legitimately-created account should
   ever need this path; the list should only grow if another genuine
   pre-reset straggler turns up.
-- **No rate limiting on `rpc_login`.** 4-digit PIN, static salt
-  (`scorekeeper:${pin}:salt2024`), single SHA-256 round — 10,000 candidates
-  is seconds of parallel requests. Fix: attempt counter keyed on
-  username/IP with backoff, inside the RPC.
+- ~~**No rate limiting on `rpc_login`.**~~ **Done 2026-07-30**
+  (`20260730212541_rate_limit_rpc_login.sql`). A new `login_attempts` table
+  (RLS enabled, zero policies — only reachable through `rpc_login`'s
+  `SECURITY DEFINER`) logs each failed attempt; the RPC now checks the
+  count for that username in the last 15 minutes *before* touching any
+  credential material, and rejects with the same empty result as a wrong
+  PIN if it's at or above 10 — so a caller can't tell "wrong" from "locked
+  out," and even the correct PIN is rejected while locked out. At 10
+  attempts/15min, exhausting the 10,000-PIN keyspace takes over 10 days.
+  Scoped to per-username counting, not per-IP (no reliable caller IP
+  inside a `SECURITY DEFINER` function here) — closes the specific threat
+  this item was filed for (brute-forcing one victim's PIN), not a
+  low-and-slow scan across many usernames, which needs the enumerable-
+  usernames P2 item fixed first. Stale rows are pruned inline per-username
+  on that username's own next login call, no `pg_cron` dependency.
+
+  **This shipped a genuine ~1-minute outage on first deploy**, worth
+  recording plainly rather than glossing over: `rpc_login`'s
+  `RETURNS TABLE` already declares an output column named `username`, and
+  the first version of this migration referenced `username` unqualified in
+  the new rate-limit queries — ambiguous against that output column, so
+  Postgres rejected every call to `rpc_login` with "column reference
+  ambiguous," breaking *all* login, not just the rate-limited path. Caught
+  immediately by testing `rpc_login('claudetester', '1234')` right after
+  deploying, fixed forward in `20260730213012_fix_rpc_login_ambiguous_username_column.sql`
+  by qualifying every `login_attempts.username` reference. Both migration
+  files are kept as separate, timestamp-accurate entries — the first one
+  left exactly as it was actually live (broken), not edited in place —
+  rather than squashed into one "clean" migration, per this repo's own
+  migration-drift lesson: the files should match `supabase migration list`
+  exactly, not a tidied-up retelling.
 - **Anyone can create unlimited profiles.** The `profiles` INSERT policy is
   only `is_admin = false`, and `handleAddGuest` in `MatchRoomPage.tsx`
   inserts client-side. One script fills the 500 MB database. Fix: route guest
