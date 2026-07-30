@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Trophy, RotateCcw, AlertCircle, Info, Target, Activity } from 'lucide-react';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
@@ -16,13 +16,17 @@ type LeaderboardEntry = GlobalPlayerStats & {
 };
 
 export default function LeaderboardPage() {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  // Raw per-(player, sport) stats for every sport at once - fetched once, not
+  // per tab. Switching tabs used to depend on `sport` inside loadLeaderboard
+  // itself, so browsing the nine sport tabs re-ran the full network fetch
+  // nine times. Now `sport` only drives the client-side derivation below.
+  const [rawStats, setRawStats] = useState<GlobalPlayerStats[]>([]);
   const [sport, setSport] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [showSPModal, setShowSPModal] = useState(false);
   const [fanBoy, setFanBoy] = useState<FanBoyEntry | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sports = ['all', 'cricket', 'golf', 'darts', 'table_tennis', 'pool', 'basketball', 'cards', 'custom'];
 
@@ -30,75 +34,13 @@ export default function LeaderboardPage() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch all-time stats aggregated from events
       const data = await getGlobalLeaderboardData();
-      
       if (isMounted && !isMounted()) return;
-
-      let processedData = [...data];
-
-      // Filter by sport if not 'all'
-      if (sport !== 'all') {
-        processedData = processedData.filter(d => d.sport === sport);
-      }
-
-      // Aggregate if 'all' sports (Global MVP) is selected
-      if (sport === 'all') {
-        const aggregated = processedData.reduce((acc: Record<string, LeaderboardEntry & { max_sport_sp: number }>, curr) => {
-          const pid = curr.profile_id;
-          if (!acc[pid]) {
-            acc[pid] = {
-              ...curr,
-              sport: 'all',
-              best_sport: curr.sport,
-              max_sport_sp: curr.season_points,
-              matches_played: 0,
-              matches_won: 0,
-              matches_lost: 0,
-              total_score: 0,
-              season_points: 0,
-              best_score: null
-            };
-          }
-          acc[pid].matches_played += curr.matches_played;
-          acc[pid].matches_won += curr.matches_won;
-          acc[pid].matches_lost += curr.matches_lost;
-          acc[pid].total_score += curr.total_score;
-          acc[pid].season_points += curr.season_points;
-          
-          if (curr.season_points > acc[pid].max_sport_sp) {
-            acc[pid].max_sport_sp = curr.season_points;
-            acc[pid].best_sport = curr.sport;
-          }
-
-          return acc;
-        }, {});
-        processedData = Object.values(aggregated);
-      }
-
-      // Sort based on selection. Ties fall back to display name then profile id
-      // so equal-scoring players hold a stable rank between loads - the primary
-      // metric alone left their order down to whatever row order the query
-      // happened to return, which made ranks visibly shuffle for no reason.
-      const primaryMetric = (entry: LeaderboardEntry) => {
-        if (sport === 'cricket') return entry.cricket_lifetime_runs || 0;
-        if (sport === 'chip_off') return entry.golf_lifetime_points || 0;
-        return entry.season_points;
-      };
-
-      processedData.sort((a, b) => {
-        const byMetric = primaryMetric(b) - primaryMetric(a);
-        if (byMetric !== 0) return byMetric;
-        const byName = (a.profile?.display_name || '').localeCompare(b.profile?.display_name || '');
-        if (byName !== 0) return byName;
-        return a.profile_id.localeCompare(b.profile_id);
-      });
-
-      setEntries(processedData.slice(0, 50));
+      setRawStats(data);
     } catch (err: unknown) {
       console.error("Error loading leaderboard:", err);
       if (isMounted && !isMounted()) return;
-      
+
       if (!navigator.onLine) {
         setError("No internet connection.");
       } else {
@@ -107,7 +49,7 @@ export default function LeaderboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [sport]);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -115,7 +57,86 @@ export default function LeaderboardPage() {
     return () => { mounted = false; };
   }, [loadLeaderboard]);
 
+  // Filter/aggregate/sort for the selected tab - pure, synchronous, and
+  // re-runs on every sport change with no network round trip.
+  const entries = useMemo(() => {
+    let processedData: LeaderboardEntry[] = [...rawStats];
+
+    // Filter by sport if not 'all'
+    if (sport !== 'all') {
+      processedData = processedData.filter(d => d.sport === sport);
+    }
+
+    // Aggregate if 'all' sports (Global MVP) is selected
+    if (sport === 'all') {
+      const aggregated = processedData.reduce((acc: Record<string, LeaderboardEntry & { max_sport_sp: number }>, curr) => {
+        const pid = curr.profile_id;
+        if (!acc[pid]) {
+          acc[pid] = {
+            ...curr,
+            sport: 'all',
+            best_sport: curr.sport,
+            max_sport_sp: curr.season_points,
+            matches_played: 0,
+            matches_won: 0,
+            matches_lost: 0,
+            total_score: 0,
+            season_points: 0,
+            best_score: null
+          };
+        }
+        acc[pid].matches_played += curr.matches_played;
+        acc[pid].matches_won += curr.matches_won;
+        acc[pid].matches_lost += curr.matches_lost;
+        acc[pid].total_score += curr.total_score;
+        acc[pid].season_points += curr.season_points;
+
+        if (curr.season_points > acc[pid].max_sport_sp) {
+          acc[pid].max_sport_sp = curr.season_points;
+          acc[pid].best_sport = curr.sport;
+        }
+
+        return acc;
+      }, {});
+      processedData = Object.values(aggregated);
+    }
+
+    // Sort based on selection. Ties fall back to display name then profile id
+    // so equal-scoring players hold a stable rank between loads - the primary
+    // metric alone left their order down to whatever row order the query
+    // happened to return, which made ranks visibly shuffle for no reason.
+    const primaryMetric = (entry: LeaderboardEntry) => {
+      if (sport === 'cricket') return entry.cricket_lifetime_runs || 0;
+      if (sport === 'chip_off') return entry.golf_lifetime_points || 0;
+      return entry.season_points;
+    };
+
+    processedData.sort((a, b) => {
+      const byMetric = primaryMetric(b) - primaryMetric(a);
+      if (byMetric !== 0) return byMetric;
+      const byName = (a.profile?.display_name || '').localeCompare(b.profile?.display_name || '');
+      if (byName !== 0) return byName;
+      return a.profile_id.localeCompare(b.profile_id);
+    });
+
+    return processedData.slice(0, 50);
+  }, [rawStats, sport]);
+
   useEffect(() => {
+    // A full leaderboard reload is comparatively expensive (see
+    // getGlobalLeaderboardData()) and this channel fires on *any* completed
+    // match anywhere in the app - several completions in quick succession
+    // (e.g. a team's players all finishing near-simultaneously) would
+    // otherwise trigger one reload per event. Debounced well past the
+    // sport rooms' 200ms in-match convention since this isn't about feeling
+    // snappy for an active scorer, just collapsing a burst into one reload.
+    const handleRefresh = () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = setTimeout(() => {
+        loadLeaderboard();
+      }, 1500);
+    };
+
     const channel = supabase
       .channel('leaderboard-live')
       .on(
@@ -126,22 +147,15 @@ export default function LeaderboardPage() {
           table: 'match_rooms',
           filter: 'status=eq.completed'
         },
-        () => {
-          setRefreshKey(prev => prev + 1);
-        }
+        () => handleRefresh()
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
     };
-  }, []);
-
-  useEffect(() => {
-    if (refreshKey > 0) {
-      loadLeaderboard();
-    }
-  }, [refreshKey, loadLeaderboard]);
+  }, [loadLeaderboard]);
 
   const loadFanBoy = useCallback(async () => {
     const { data } = await supabase
