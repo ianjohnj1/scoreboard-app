@@ -302,6 +302,25 @@ export async function determineAndSaveWinnerIfMissing(matchId: string): Promise<
   }
 }
 
+// Bucket every child row by its match_id in one pass. The per-match loop in
+// getGlobalLeaderboardData() used to re-scan the full players/events/cricket
+// arrays with a .filter() per match, which is O(matches x rows) - at ~163
+// events per match that's ~59M comparisons by 600 completed matches and ~163M
+// by 1000, i.e. seconds of blocked main thread on a phone. Grouping up front
+// makes the loop linear in total rows instead.
+function groupByMatchId<T extends { match_id: string }>(rows: T[] | null): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows || []) {
+    const bucket = grouped.get(row.match_id);
+    if (bucket) {
+      bucket.push(row);
+    } else {
+      grouped.set(row.match_id, [row]);
+    }
+  }
+  return grouped;
+}
+
 export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
   // 1. Fetch all completed matches
   const { data: matches, error: matchesError } = await supabase
@@ -324,6 +343,9 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
   ]);
 
   const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+  const playersByMatch = groupByMatchId(players);
+  const eventsByMatch = groupByMatchId(events);
+  const cricketStatsByMatch = groupByMatchId(cricketStats);
   const globalStats = new Map<string, GlobalPlayerStats>();
 
   // Helper to get/init global player stats
@@ -358,8 +380,10 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
 
   // 3. Process each match
   for (const match of matches) {
-    const matchPlayers = players?.filter(p => p.match_id === match.id) || [];
-    const matchEvents = events?.filter(e => e.match_id === match.id) || [];
+    // These are the grouped arrays themselves, not per-match copies - read
+    // only, never mutate them in place.
+    const matchPlayers = playersByMatch.get(match.id) || [];
+    const matchEvents = eventsByMatch.get(match.id) || [];
     const isChipOff = match.sport === 'golf' && (match.house_rules as { variant?: string })?.variant === 'chip_off';
     const isPuttVsPutt = match.sport === 'golf' && (match.house_rules as { variant?: string })?.variant === 'putt_vs_putt';
     const isChipOffTeamPlay = isChipOff && Boolean((match.house_rules as { team_play?: boolean })?.team_play);
@@ -367,7 +391,7 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
     const playerMap = new Map<string, PlayerStatAccumulator>();
 
     if (match.sport === 'cricket') {
-      const matchCricketStats = cricketStats?.filter(s => s.match_id === match.id) || [];
+      const matchCricketStats = cricketStatsByMatch.get(match.id) || [];
       matchCricketStats.forEach(s => {
         const existing = playerMap.get(s.profile_id) || newPlayerStatAccumulator();
         existing.runs += s.bat_runs || 0;
