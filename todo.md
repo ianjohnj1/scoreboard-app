@@ -253,23 +253,34 @@ before 100 users is the P1 list below** — in particular the live
   2026-07-30**: `supabase/tests/database/match_event_points.test.sql` is a
   checked-in pgTAP file (39 assertions, all 14 branches plus
   `darts_event_score()`'s single-throw/darts-array paths and the
-  `point`/`score` falsy-zero quirk). Not yet wired to run anywhere — no
-  local Supabase stack to `supabase test db` against (see Environment in
-  `CLAUDE.md`), and running it against a project needs the `pgtap`
-  extension enabled there first. Next step is deciding where it actually
-  runs (local Docker stack vs. a Supabase branch vs. CI), not writing more
-  of it.
+  `point`/`score` falsy-zero quirk). Verified by running it against the live
+  project via the Supabase MCP's `execute_sql` (transaction always rolled
+  back — pure `SELECT`s, so nothing was ever at risk); all 39 pass.
+
+  ~~No RLS/policy regression tests.~~ **Done 2026-07-30**:
+  `supabase/tests/database/rls_smoke.test.sql` (17 assertions) covers the
+  admin-override and ownership-isolation bug classes described above. Also
+  verified against live the same way — seeds synthetic profiles/sessions/a
+  match, impersonates each identity via the `request.headers` GUC trick,
+  runs the assertions, then rolls back (confirmed zero rows and no
+  `pgtap` extension left behind afterward). All 17 pass now; the first run
+  caught a bug in the *test's* expectation (see CLAUDE.md's Testing
+  section), not in the app.
+
+  Neither file is wired to run automatically anywhere yet — no local
+  Supabase stack to `supabase test db` against (see Environment in
+  `CLAUDE.md`), and no CI. Next step for both is deciding where they run
+  on a recurring basis (local Docker stack vs. a Supabase branch vs. CI),
+  not writing more assertions.
 
   Still gaps, in rough priority order:
   - **`getGlobalLeaderboardData()`'s reduction loop** (placement, milestone
     SP, chip-off team ordering) is still untested — it's tightly coupled to
     chained Supabase calls, so testing it means either extracting the
     reduction into a pure function or building a fake PostgREST client.
-  - **No RLS/policy regression tests.** Given the repo's history (two
-    separate admin-override RLS gaps, the original `USING (true)` audit —
-    see `docs/rls-ground-rules.md`), a scripted smoke test against a
-    Supabase branch would catch this class of bug before it reaches the
-    shared live project.
+  - **`rls_smoke.test.sql` covers two bug classes on a handful of tables,
+    not the full RLS surface.** Most policies (match_teams, comments,
+    cricket/golf side tables, …) still have no test at all.
   - **No component/e2e tests and no CI.** The manual browser-preview QA
     loop is still the only verification for anything UI-facing, and
     `npm test` isn't wired into any CI check yet (there is no CI).
