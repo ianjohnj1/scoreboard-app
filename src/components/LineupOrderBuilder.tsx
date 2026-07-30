@@ -7,6 +7,7 @@ type LineupOrderBuilderProps = {
   players: Profile[];
   onChange: (players: Profile[]) => void;
   accentColor: string;
+  description?: string;
 };
 
 export default function LineupOrderBuilder({
@@ -14,6 +15,7 @@ export default function LineupOrderBuilder({
   players,
   onChange,
   accentColor,
+  description = 'Set the order this team cycles through during PvP turns.',
 }: LineupOrderBuilderProps) {
   const movePlayer = (index: number, direction: -1 | 1) => {
     const nextIndex = index + direction;
@@ -32,7 +34,7 @@ export default function LineupOrderBuilder({
         <h3 className="font-bold text-charcoal-100">{title}</h3>
       </div>
       <p className="text-xs text-charcoal-400">
-        Set the order this team cycles through during PvP turns.
+        {description}
       </p>
 
       <div className="space-y-2">

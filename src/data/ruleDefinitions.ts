@@ -102,6 +102,14 @@ export const RULE_DEFINITIONS: Record<RuleContextKey, Record<string, RuleDefinit
         chip_off: { label: 'Chip Off', explain: 'Players chip for points over multiple rounds.' },
       },
     },
+    team_play: {
+      label: 'Team Play',
+      explain: 'Split into two teams with a fixed lineup order. Turns alternate between teams (Team 1 Player 1, Team 2 Player 1, Team 1 Player 2, ...) and each shot\'s points add to the shooter\'s team total.',
+      values: {
+        true: { label: 'On', explain: 'Two teams compete, turns interleave across each team\'s lineup, and the higher team total wins.' },
+        false: { label: 'Off', explain: 'Every player competes individually.' },
+      },
+    },
     balls_per_turn: {
       label: 'Balls Per Turn',
       explain: 'How many balls each player chips before the turn passes.',

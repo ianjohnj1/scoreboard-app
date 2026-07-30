@@ -157,6 +157,7 @@ export interface GlobalPlayerStats {
 
 interface MatchStatsListEntry {
   profile_id: string;
+  team_id: string | null;
   score: number;
   is_winner: boolean;
   extra: PlayerStatAccumulator;
@@ -181,7 +182,7 @@ export async function determineAndSaveWinnerIfMissing(matchId: string): Promise<
   if (match.winner_profile_id || match.winner_team_id) return;
   if (match.sport !== 'golf') return;
 
-  const houseRules = match.house_rules as { variant?: string } | null;
+  const houseRules = match.house_rules as { variant?: string; team_play?: boolean } | null;
   const isChipOff = houseRules?.variant === 'chip_off';
   const isPuttVsPutt = houseRules?.variant === 'putt_vs_putt';
   if (isPuttVsPutt) return; // PvP always completes with an explicit team winner
@@ -213,6 +214,36 @@ export async function determineAndSaveWinnerIfMissing(matchId: string): Promise<
       if (pts === 10) existing.tens += 1;
       playerMap.set(e.player_id, existing);
     });
+
+    if (houseRules?.team_play) {
+      // Team chip-off: aggregate the same per-player points/tens by team_id
+      // and set winner_team_id instead - there's no single winning profile.
+      const teamMap = new Map<string, { points: number; tens: number }>();
+      players.forEach(p => {
+        if (!p.team_id) return;
+        const existing = teamMap.get(p.team_id) || { points: 0, tens: 0 };
+        const pStats = playerMap.get(p.profile_id) || { points: 0, tens: 0 };
+        existing.points += pStats.points;
+        existing.tens += pStats.tens;
+        teamMap.set(p.team_id, existing);
+      });
+
+      let winnerTeamId: string | null = null;
+      let maxTeamPoints = -1;
+      let maxTeamTens = -1;
+      teamMap.forEach((val, tid) => {
+        if (val.points > maxTeamPoints || (val.points === maxTeamPoints && val.tens > maxTeamTens)) {
+          maxTeamPoints = val.points;
+          maxTeamTens = val.tens;
+          winnerTeamId = tid;
+        }
+      });
+
+      if (winnerTeamId) {
+        await supabase.from('match_rooms').update({ winner_team_id: winnerTeamId }).eq('id', matchId);
+      }
+      return;
+    }
 
     let maxPoints = -1;
     let maxTens = -1;
@@ -331,6 +362,7 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
     const matchEvents = events?.filter(e => e.match_id === match.id) || [];
     const isChipOff = match.sport === 'golf' && (match.house_rules as { variant?: string })?.variant === 'chip_off';
     const isPuttVsPutt = match.sport === 'golf' && (match.house_rules as { variant?: string })?.variant === 'putt_vs_putt';
+    const isChipOffTeamPlay = isChipOff && Boolean((match.house_rules as { team_play?: boolean })?.team_play);
 
     const playerMap = new Map<string, PlayerStatAccumulator>();
 
@@ -484,10 +516,28 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
       const isWinner = match.winner_profile_id === p.profile_id || (!!p.team_id && match.winner_team_id === p.team_id);
       let score = s.points;
       if (match.sport === 'cricket') score = s.runs;
-      if (match.sport === 'golf') score = isChipOff ? s.points : isPuttVsPutt ? (s.holed_putts_total || 0) : s.strokes;
+      if (match.sport === 'golf') {
+        if (isChipOff) {
+          // Team chip-off: every teammate is credited with the team's combined
+          // total for ranking/placement/lifetime points, same as how a team
+          // win/loss is already shared - individual milestone stats (tens,
+          // chips) stay untouched below, sourced from the per-player accumulator.
+          if (isChipOffTeamPlay && p.team_id) {
+            const teammateIds = matchPlayers.filter(mp => mp.team_id === p.team_id).map(mp => mp.profile_id);
+            score = teammateIds.reduce((sum, pid) => sum + (playerMap.get(pid)?.points || 0), 0);
+          } else {
+            score = s.points;
+          }
+        } else if (isPuttVsPutt) {
+          score = s.holed_putts_total || 0;
+        } else {
+          score = s.strokes;
+        }
+      }
 
       matchStatsList.push({
         profile_id: p.profile_id,
+        team_id: p.team_id ?? null,
         score,
         is_winner: isWinner,
         extra: s
@@ -500,12 +550,26 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
       return b.score - a.score;
     });
 
+    // Team chip-off gives every teammate an identical score (the team total),
+    // but sortedForPlacement.findIndex below is a raw array position, not a
+    // tie-aware rank - two entries with equal score would still land on
+    // different positions/ranks. Rank by each team's position in the score
+    // order instead, so both teammates always share one rank/placement SP.
+    const chipOffTeamOrder: string[] = [];
+    if (isChipOffTeamPlay) {
+      sortedForPlacement.forEach(s => {
+        if (s.team_id && !chipOffTeamOrder.includes(s.team_id)) chipOffTeamOrder.push(s.team_id);
+      });
+    }
+
     // 3.3 Update global stats
     matchStatsList.forEach(ms => {
       const g = getPlayerStats(ms.profile_id, match.sport);
-      
+
       // Calculate Season Points
-      const rank = sortedForPlacement.findIndex(s => s.profile_id === ms.profile_id) + 1;
+      const rank = isChipOffTeamPlay && ms.team_id
+        ? chipOffTeamOrder.indexOf(ms.team_id) + 1
+        : sortedForPlacement.findIndex(s => s.profile_id === ms.profile_id) + 1;
       const placementSP = calculatePlacementSP(rank);
 
       let milestoneSP = 0;

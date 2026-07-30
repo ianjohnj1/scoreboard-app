@@ -1,26 +1,28 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { recordEvent, undoLastEvent, completeMatchWithWinner, generateRoomCode } from '../../lib/matches';
+import { recordEvent, undoLastEvent, completeMatchWithWinner, completeMatchWithTeamWinner, generateRoomCode } from '../../lib/matches';
 import UserAvatar from '../UserAvatar';
 import Modal from '../Modal';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
-import type { Profile, MatchEvent } from '../../lib/supabase';
-import { Trophy, Star, RotateCcw, AlertCircle, ArrowLeft } from 'lucide-react';
+import type { Profile, MatchEvent, MatchTeam } from '../../lib/supabase';
+import { Trophy, Star, RotateCcw, AlertCircle, ArrowLeft, Users } from 'lucide-react';
 
 interface ChipOffRules {
   balls_per_turn?: number;
   total_rounds?: number;
   hazard_penalty?: boolean;
+  team_play?: boolean;
 }
 
 export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
-  const { match, players, profiles, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
+  const { match, players, profiles, teams, isSpectator, currentUser, isAdmin, isTvDisplayMode } = ctx;
   const canInteract = match.status === 'active' || isAdmin;
   const rules = (match.house_rules || {}) as ChipOffRules;
   const ballsPerTurn = rules.balls_per_turn || 3;
   const totalRounds = rules.total_rounds || 9;
   const hazardPenalty = rules.hazard_penalty || false;
+  const isTeamMode = Boolean(rules.team_play) && teams.length >= 2;
 
   const [events, setEvents] = useState<MatchEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,11 +43,48 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
     };
   }, []);
 
-  const matchPlayers = useMemo(() => 
+  const matchPlayers = useMemo(() =>
     players
       .map(p => profiles.get(p.profile_id))
       .filter(Boolean) as Profile[]
   , [players, profiles]);
+
+  const orderedTeams = useMemo(
+    () => [...teams].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    [teams]
+  );
+
+  const teamLineups = useMemo(() => {
+    const map = new Map<string, Profile[]>();
+    orderedTeams.forEach(team => {
+      const lineup = players
+        .filter(p => p.team_id === team.id)
+        .sort((a, b) => (a.lineup_order ?? a.batting_order ?? 999) - (b.lineup_order ?? b.batting_order ?? 999))
+        .map(p => profiles.get(p.profile_id))
+        .filter(Boolean) as Profile[];
+      map.set(team.id, lineup);
+    });
+    return map;
+  }, [players, profiles, orderedTeams]);
+
+  // Turn order: when team_play is on, interleave each team's lineup by
+  // position (Team A P1, Team B P1, Team A P2, Team B P2, ...), skipping a
+  // team once its lineup runs out so uneven roster sizes degrade gracefully.
+  const rotation = useMemo(() => {
+    if (!isTeamMode) return matchPlayers.map(p => ({ profile: p, teamId: null as string | null }));
+    const lineups = orderedTeams.map(t => teamLineups.get(t.id) || []);
+    const maxLen = Math.max(0, ...lineups.map(l => l.length));
+    const order: { profile: Profile; teamId: string }[] = [];
+    for (let i = 0; i < maxLen; i++) {
+      orderedTeams.forEach((team, idx) => {
+        const player = lineups[idx][i];
+        if (player) order.push({ profile: player, teamId: team.id });
+      });
+    }
+    return order;
+  }, [isTeamMode, orderedTeams, teamLineups, matchPlayers]);
+
+  const rotationPlayers = useMemo(() => rotation.map(r => r.profile), [rotation]);
 
   const loadData = useCallback(async () => {
     // Abort any pending requests
@@ -158,7 +197,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
     if (lastScoreEvent) {
       const lastRound = (lastScoreEvent.event_data.round as number) || 1;
       const lastBall = (lastScoreEvent.event_data.ball as number) || 1;
-      const lastPlayerIdx = matchPlayers.findIndex(p => p.id === lastScoreEvent.player_id);
+      const lastPlayerIdx = rotationPlayers.findIndex(p => p.id === lastScoreEvent.player_id);
 
       currentRound = lastRound;
       currentPlayerIndex = lastPlayerIdx === -1 ? 0 : lastPlayerIdx;
@@ -167,7 +206,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       if (currentBallIndex >= ballsPerTurn) {
         currentBallIndex = 0;
         currentPlayerIndex++;
-        if (currentPlayerIndex >= matchPlayers.length) {
+        if (currentPlayerIndex >= rotationPlayers.length) {
           currentPlayerIndex = 0;
           currentRound++;
         }
@@ -181,10 +220,21 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       currentBallIndex,
       isGameOver: currentRound > totalRounds
     };
-  }, [events, matchPlayers, ballsPerTurn, totalRounds]);
+  }, [events, matchPlayers, rotationPlayers, ballsPerTurn, totalRounds]);
 
-  const currentPlayer = matchPlayers[gameStats.currentPlayerIndex];
+  const currentEntry = rotation[gameStats.currentPlayerIndex];
+  const currentPlayer = currentEntry?.profile;
+  const currentTeamId = currentEntry?.teamId ?? undefined;
   const isMyTurn = !isSpectator && currentUser?.id === currentPlayer?.id;
+
+  const teamTotals = useMemo(() => {
+    if (!isTeamMode) return [] as { team: MatchTeam; total: number }[];
+    return orderedTeams.map(team => {
+      const memberIds = players.filter(p => p.team_id === team.id).map(p => p.profile_id);
+      const total = memberIds.reduce((sum, pid) => sum + (gameStats.stats.get(pid)?.totalPoints || 0), 0);
+      return { team, total };
+    });
+  }, [isTeamMode, orderedTeams, players, gameStats.stats]);
 
   const handleScore = async (points: number) => {
     if (!currentPlayer || loading || isSpectator || !canInteract) return;
@@ -195,13 +245,13 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
         'chip_off_score',
         { points, round: gameStats.currentRound, ball: gameStats.currentBallIndex + 1 },
         currentPlayer.id,
-        undefined,
+        currentTeamId,
         currentUser?.id
       );
 
       // Check if this was the last ball of the round
       const willBeLastBall = gameStats.currentBallIndex === ballsPerTurn - 1;
-      const willBeLastPlayer = gameStats.currentPlayerIndex === matchPlayers.length - 1;
+      const willBeLastPlayer = gameStats.currentPlayerIndex === rotationPlayers.length - 1;
 
       if (willBeLastBall && willBeLastPlayer) {
         // Calculate round winner
@@ -222,13 +272,30 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
             }
             return { id, totalPoints: s.totalPoints, tens: s.tens };
           });
-          
-          finalStats.sort((a, b) => {
-            if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-            return b.tens - a.tens;
-          });
-          
-          await completeMatchWithWinner(match.id, finalStats[0].id);
+
+          if (isTeamMode) {
+            const teamFinalTotals = orderedTeams.map(team => {
+              const memberIds = new Set(players.filter(p => p.team_id === team.id).map(p => p.profile_id));
+              const agg = finalStats
+                .filter(f => memberIds.has(f.id))
+                .reduce((acc, f) => ({ totalPoints: acc.totalPoints + f.totalPoints, tens: acc.tens + f.tens }), { totalPoints: 0, tens: 0 });
+              return { teamId: team.id, ...agg };
+            });
+
+            teamFinalTotals.sort((a, b) => {
+              if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+              return b.tens - a.tens;
+            });
+
+            await completeMatchWithTeamWinner(match.id, teamFinalTotals[0].teamId);
+          } else {
+            finalStats.sort((a, b) => {
+              if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+              return b.tens - a.tens;
+            });
+
+            await completeMatchWithWinner(match.id, finalStats[0].id);
+          }
           ctx.onRefresh();
         }
       }
@@ -270,18 +337,54 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
         
       if (matchError) throw matchError;
 
-      const matchPlayersToInsert = players.map(p => ({
-        match_id: newMatch.id,
-        profile_id: p.profile_id,
-        role: p.role,
-        batting_order: p.batting_order
-      }));
-      
-      const { error: playersError } = await supabase
-        .from('match_players')
-        .insert(matchPlayersToInsert);
-        
-      if (playersError) throw playersError;
+      if (orderedTeams.length > 0) {
+        const teamIdMap = new Map<string, string>();
+        const { data: newTeams, error: teamsError } = await supabase
+          .from('match_teams')
+          .insert(
+            orderedTeams.map(team => ({
+              match_id: newMatch.id,
+              team_name: team.team_name,
+              team_color: team.team_color,
+              sort_order: team.sort_order,
+            }))
+          )
+          .select();
+
+        if (teamsError) throw teamsError;
+
+        const sortedNewTeams = [...(newTeams || [])].sort((a: MatchTeam, b: MatchTeam) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        orderedTeams.forEach((oldTeam, index) => {
+          const newTeam = sortedNewTeams[index];
+          if (newTeam?.id) teamIdMap.set(oldTeam.id, newTeam.id);
+        });
+
+        const { error: playersError } = await supabase.from('match_players').insert(
+          players.map(p => ({
+            match_id: newMatch.id,
+            profile_id: p.profile_id,
+            role: p.role,
+            team_id: p.team_id ? teamIdMap.get(p.team_id) || null : null,
+            batting_order: p.batting_order,
+            lineup_order: p.lineup_order,
+          }))
+        );
+
+        if (playersError) throw playersError;
+      } else {
+        const matchPlayersToInsert = players.map(p => ({
+          match_id: newMatch.id,
+          profile_id: p.profile_id,
+          role: p.role,
+          batting_order: p.batting_order
+        }));
+
+        const { error: playersError } = await supabase
+          .from('match_players')
+          .insert(matchPlayersToInsert);
+
+        if (playersError) throw playersError;
+      }
 
       navigate(`/match/${roomCode}`);
     } catch (err) {
@@ -327,6 +430,27 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
           </div>
         </div>
 
+        {isTeamMode && teamTotals.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {teamTotals.map(({ team, total }) => (
+              <div
+                key={team.id}
+                className={`rounded-xl border p-3 flex items-center gap-2 ${
+                  !gameStats.isGameOver && currentTeamId === team.id
+                    ? 'border-emerald-500/50 bg-emerald-950/20'
+                    : 'border-charcoal-700 bg-charcoal-800/50'
+                }`}
+              >
+                <Users size={14} style={{ color: team.team_color }} className="flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9px] font-black uppercase tracking-widest truncate" style={{ color: team.team_color }}>{team.team_name}</p>
+                  <p className="text-xl font-mono font-black text-charcoal-50 leading-none">{total}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {!gameStats.isGameOver && currentPlayer && (
           <div className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-500 ${
             isMyTurn ? 'bg-emerald-950/20 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]' : 'bg-charcoal-800/50 border-charcoal-700'
@@ -349,13 +473,27 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
         {/* Scoring Pad or Match Summary */}
-        {(gameStats.isGameOver || match.winner_profile_id || isSpectator || isTvDisplayMode) ? (
+        {(gameStats.isGameOver || match.winner_profile_id || match.winner_team_id || isSpectator || isTvDisplayMode) ? (
           <div className="flex flex-col items-center justify-center py-8 px-4 text-center bg-charcoal-900/30 rounded-2xl border border-charcoal-700">
-            {(gameStats.isGameOver || match.winner_profile_id) && <Trophy size={48} className="text-emerald-500 mb-4" />}
+            {(gameStats.isGameOver || match.winner_profile_id || match.winner_team_id) && <Trophy size={48} className="text-emerald-500 mb-4" />}
             <h2 className="text-2xl font-black text-charcoal-50 mb-6">
-              {(gameStats.isGameOver || match.winner_profile_id) ? 'Match Complete' : 'Live Leaderboard'}
+              {(gameStats.isGameOver || match.winner_profile_id || match.winner_team_id) ? 'Match Complete' : 'Live Leaderboard'}
             </h2>
-            
+
+            {isTeamMode && teamTotals.length > 0 && (
+              <div className="w-full grid grid-cols-2 gap-3 mb-6">
+                {[...teamTotals].sort((a, b) => b.total - a.total).map(({ team, total }, idx) => (
+                  <div
+                    key={team.id}
+                    className={`rounded-xl p-4 border text-left ${idx === 0 ? 'border-emerald-500/40 bg-emerald-950/10' : 'border-charcoal-700 bg-charcoal-800'}`}
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-widest truncate" style={{ color: team.team_color }}>{team.team_name}</p>
+                    <p className="text-3xl font-mono font-black text-charcoal-50">{total}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="w-full space-y-4">
               {sortedLeaderboard.map((p, idx) => {
                 const stat = gameStats.stats.get(p.id)!;
@@ -480,7 +618,7 @@ export default function ChipOffRoom({ ctx }: { ctx: MatchContext }) {
         )}
 
         {/* Leaderboard (Only for active players, hidden in spectator/TV mode) */}
-        {(!gameStats.isGameOver && !match.winner_profile_id && !isSpectator && !isTvDisplayMode) && (
+        {(!gameStats.isGameOver && !match.winner_profile_id && !match.winner_team_id && !isSpectator && !isTvDisplayMode) && (
           <div className="space-y-3">
             <div className="flex items-center justify-between px-2">
               <h3 className="text-[10px] font-black text-charcoal-500 uppercase tracking-[0.2em]">Leaderboard</h3>

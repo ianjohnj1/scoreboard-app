@@ -115,6 +115,8 @@ export default function NewMatchPage() {
   const [team2Players, setTeam2Players] = useState<Profile[]>([]);
   const [individualPlayers, setIndividualPlayers] = useState<Profile[]>([]);
 
+  const [chipOffTeamPlay, setChipOffTeamPlay] = useState(false);
+
   const [playerSearch, setPlayerSearch] = useState('');
   const [guestName, setGuestName] = useState('');
   const [, setAddingGuest] = useState(false);
@@ -177,15 +179,18 @@ export default function NewMatchPage() {
             : null,
   };
   const isPuttVsPutt = selectedSport === 'golf' && golfVariant === 'putt_vs_putt';
-  
+  const isChipOffTeamPlay = selectedSport === 'golf' && golfVariant === 'chip_off' && chipOffTeamPlay;
+
   // Backyard mode forces an individual format setup
   // Practice mode also defaults to individual format to allow flexible multi-player "nets"
   const isTeam = isPuttVsPutt
     ? true
-    : isPractice 
-    ? false 
-    : selectedSport === 'custom' 
-      ? customIsTeam 
+    : isChipOffTeamPlay
+    ? true
+    : isPractice
+    ? false
+    : selectedSport === 'custom'
+      ? customIsTeam
       : selectedSport === 'cricket'
         ? cricketVariant === 'classic'
         : (sport?.team ?? false);
@@ -290,6 +295,7 @@ export default function NewMatchPage() {
             ...effectiveHouseRules,
             comments_enabled: commentsEnabled,
             course_data: selectedSport === 'golf' && golfVariant === 'classic' ? golfCourse : null,
+            team_play: selectedSport === 'golf' && golfVariant === 'chip_off' ? chipOffTeamPlay : undefined,
             holes:
               selectedSport === 'golf'
                 ? golfVariant === 'chip_off'
@@ -338,7 +344,7 @@ export default function NewMatchPage() {
             match_id: matchId,
             profile_id: p.id,
             team_id: team1Id,
-            lineup_order: isPuttVsPutt ? team1Players.findIndex(player => player.id === p.id) + 1 : null,
+            lineup_order: (isPuttVsPutt || isChipOffTeamPlay) ? team1Players.findIndex(player => player.id === p.id) + 1 : null,
             role: 'player'
           }));
 
@@ -348,7 +354,7 @@ export default function NewMatchPage() {
             match_id: matchId,
             profile_id: p.id,
             team_id: team2Id,
-            lineup_order: isPuttVsPutt ? team2Players.findIndex(player => player.id === p.id) + 1 : null,
+            lineup_order: (isPuttVsPutt || isChipOffTeamPlay) ? team2Players.findIndex(player => player.id === p.id) + 1 : null,
             role: 'player'
           }));
 
@@ -592,6 +598,7 @@ export default function NewMatchPage() {
           <button
             onClick={() => {
               setGolfVariant('chip_off');
+              setChipOffTeamPlay(false);
               setIndividualPlayers(activeUser ? [activeUser] : []);
               setHouseRules({
                 balls_per_turn: 3,
@@ -985,6 +992,20 @@ export default function NewMatchPage() {
                 </div>
               ) : selectedSport === 'golf' && golfVariant === 'chip_off' ? (
                 <div className="space-y-4 pt-2">
+                  <RuleToggle
+                    label="Team Play"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'team_play')?.explain}
+                    value={chipOffTeamPlay}
+                    onChange={v => {
+                      setChipOffTeamPlay(v);
+                      if (v) {
+                        setTeam1Players(activeUser ? [activeUser] : []);
+                        setTeam2Players([]);
+                      } else {
+                        setIndividualPlayers(activeUser ? [activeUser] : []);
+                      }
+                    }}
+                  />
                   <RuleNumber
                     label="Balls Per Turn"
                     explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'balls_per_turn')?.explain}
@@ -1022,19 +1043,21 @@ export default function NewMatchPage() {
               <>
                 <TeamPlayerPicker teamName={team1Name} onTeamNameChange={setTeam1Name} teamColor="#3b82f6" players={team1Players} onRemove={(id) => removePlayerFromGroup(id, 'team1')} onAdd={() => setActiveTeamPicker('team1')} />
                 <TeamPlayerPicker teamName={team2Name} onTeamNameChange={setTeam2Name} teamColor="#ef4444" players={team2Players} onRemove={(id) => removePlayerFromGroup(id, 'team2')} onAdd={() => setActiveTeamPicker('team2')} />
-                {isPuttVsPutt && (
+                {(isPuttVsPutt || isChipOffTeamPlay) && (
                   <>
                     <LineupOrderBuilder
                       title={`${team1Name} Lineup Order`}
                       players={team1Players}
                       onChange={setTeam1Players}
                       accentColor="#3b82f6"
+                      description={isChipOffTeamPlay ? 'Set the order this team cycles through — turns alternate with the other team, one player at a time.' : undefined}
                     />
                     <LineupOrderBuilder
                       title={`${team2Name} Lineup Order`}
                       players={team2Players}
                       onChange={setTeam2Players}
                       accentColor="#ef4444"
+                      description={isChipOffTeamPlay ? 'Set the order this team cycles through — turns alternate with the other team, one player at a time.' : undefined}
                     />
                   </>
                 )}
