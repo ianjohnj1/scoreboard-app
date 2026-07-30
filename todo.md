@@ -241,10 +241,25 @@ hole — the item that needed zero user growth to matter — is fixed as of
   syncs. Darts is the most stateful sport in the app, so this is the worst
   room to have it in. Confirmed bug, not a scaling issue — but at 100 users
   it stops being rare.
-- **`active_sessions` is never garbage-collected.** 316 rows for 16 profiles,
-  **307 of them on a single profile**, 313 stale by more than a day. Every
-  RLS check reads this table. Fix: a `pg_cron` job deleting rows with
-  `last_seen < now() - interval '7 days'`.
+- ~~**`active_sessions` is never garbage-collected.**~~ **Done 2026-07-30**
+  (`20260730214556_garbage_collect_active_sessions.sql`). Enabled Supabase
+  Cron (`pg_cron`, per the standard install snippet) and scheduled a daily
+  job at 03:00 UTC deleting rows with `last_seen < now() - interval '7 days'`;
+  `cron.schedule()` upserts by job name, so the migration is safe to re-run.
+  Also ran the same delete once immediately to clear the existing backlog
+  rather than leaving it for the first scheduled run.
+
+  Re-measuring before the fix found the 307-on-one-profile detail wasn't
+  what it looked like: every profile except one already had exactly one
+  session row (`rpc_login`'s reuse logic — find-or-create, not always-insert
+  — was working correctly the whole time). The 307 were all on a single
+  profile (almost certainly dev/test churn from repeated login/logout
+  during active development, spread over the whole June–July build
+  period), not 16 real users each accumulating hundreds of rows. Verified
+  against live: row count went from 316 to 3 after the cleanup ran, the
+  3 survivors are exactly the sessions actually active within the last
+  day (`claudetester` plus two recent `ian` sessions), and `rpc_login`
+  still works normally afterward.
 - **Unfiltered global realtime subscriptions.** `fanboy-live` in
   `LeaderboardPage.tsx` listens to *every* comment INSERT app-wide; the
   leaderboard and `ProfilePage` both listen to every completed match. Fan-out
