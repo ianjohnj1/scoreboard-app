@@ -71,6 +71,10 @@ Variants live in `house_rules.variant`, not in `sport`:
 
 Darts sub-games are pure reducers (`createXState` / `applyXThrow` over `DartsRuntimeState`) in `src/lib/darts/`, kept separate from the SVG board geometry in `board.ts`.
 
+### Dashboard match sections are a strict partition, not independent queries
+
+`getMatchDisplayStatus()` in `lib/matches.ts` is the single source of truth for how a match should read to a viewer: `'done'` (status `completed`), `'paused'` (status `paused`, **or** status `active` but `isMatchStale()` — no update in `STALE_MATCH_THRESHOLD_MS`, 4h), or `'live'` (active and not stale). Dashboard's three sections each pull from a different query but must never show the same match twice: `getLiveActivity()` (status `active`, not stale) → Live Activity; `getActiveMatches()` (status `active` or `paused`) filtered to `displayStatus !== 'live'` → Active Matches; `getCompletedMatches()` (status `completed` only) → Recent Matches. `getRecentMatches()` (any status, most recent N by `created_at`) is a different, older function still used by `HistoryPage` for its own client-side status-tab filtering — don't reach for it on the dashboard or conflate the two.
+
 If a room memoizes a function that both reads and sets its own `loading` state (e.g. a guard like `if (loading) return;` inside a `useCallback`), don't put the reactive `loading` value in that callback's dependency array — every toggle recreates the callback, which recreates anything memoized on top of it (in `GolfRoom.tsx`, `loadData`), which can retrigger a mount `useEffect` that calls it again, forever. `GolfRoom.tsx` mirrors `loading` into a `loadingRef` for exactly this reason — the guard reads the ref, the dependency array doesn't include it.
 
 `DartsBoard.tsx`'s SVG `viewBox` is padded to `-24 -24 448 448`, not the `0 0 400 400` the board's own `DARTBOARD_CENTER`/`DARTBOARD_RADIUS` constants (200/190, in `board.ts`) would suggest — number labels sit at radius 205, so a tight viewBox clips them at 12/6 o'clock. The multiplier-menu popup's position is computed from that same `viewBox` origin/size (`VIEWBOX_MIN`/`VIEWBOX_SIZE` in `DartsBoard.tsx`); if the padding ever changes, that math must change with it or the popup lands off-target.
@@ -122,6 +126,8 @@ Icons are `lucide-react` only. Don't add UI-theme, component, or icon packages �
 - Any surviving `USING (true)` needs an inline comment justifying it.
 
 New migration files need a **unique 14-digit timestamp prefix** (`YYYYMMDDHHMMSS`); date-only prefixes collided and broke CLI history once already. Core tables (`profiles`, `match_rooms`, …) were created via the Supabase dashboard and have no `CREATE TABLE` anywhere in this repo — the live database is the only source of truth for their full shape. New tables should always get a migration-tracked `CREATE TABLE`.
+
+A client-side `ctx.isAdmin` override is only real if the matching RLS policy grants it too — they can silently diverge. Until `20260730024459_match_rooms_update_admin_override.sql`, `match_rooms`'s DELETE policy included `OR is_admin_session()` but its UPDATE policy (`is_match_participant(id)` only) didn't, even though every sport room's client code treats admin as a blanket override (`match.status === 'active' || ctx.isAdmin`) for actions like the header menu's Pause/End & Lock. An admin ending a match they didn't create or join saw success and a closed dialog, but the write silently affected 0 rows — PostgREST returns `204` for an RLS-filtered UPDATE exactly like a real success, so nothing in the client ever surfaced an error. When adding or reviewing an admin-override check in a sport room, verify the corresponding table's RLS policy for that command actually has `is_admin_session()` too — don't assume it matches a sibling command's policy (e.g. DELETE) just because they're defined next to each other.
 
 ### Migration history has drifted from live twice — check before trusting it
 
