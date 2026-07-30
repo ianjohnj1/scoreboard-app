@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. It documents what's already true of the code — for known gaps, tech debt, and planned features, see [todo.md](todo.md).
 
 ## Commands
 
@@ -87,7 +87,7 @@ Names that look plausible but do not exist — don't code against them: there is
 
 ### Stats pipeline
 
-The leaderboard is computed **live, entirely from raw tables**, on every load — `getGlobalLeaderboardData()` in `src/lib/stats.ts` pulls `match_rooms` (`status = 'completed'`) + `match_players` + `match_events` + `cricket_player_stats` + `profiles` and re-derives everything (lifetime counters, `extra_stats`, `season_points` from `SEASON_POINT_RULES`) in one `event_type` switch, in memory, per request. There is no stored/cached aggregate the client writes to — `player_career_stats` used to be that cache, but as of 2026-07-30 the client no longer writes it at all (see Database and migrations → below); nothing reads it either, so treat the table as dead unless you're deliberately reviving it as a real server-computed cache.
+The leaderboard is computed **live, entirely from raw tables**, on every load — `getGlobalLeaderboardData()` in `src/lib/stats.ts` pulls `match_rooms` (`status = 'completed'`) + `match_players` + `match_events` + `cricket_player_stats` + `profiles` and re-derives everything (lifetime counters, `extra_stats`, `season_points` from `SEASON_POINT_RULES`) in one `event_type` switch, in memory, per request. There is no stored/cached aggregate the client writes to — `player_career_stats` used to be that cache, but as of 2026-07-30 the client no longer writes it at all (see Database and migrations → below) and nothing reads it either; treat the table as dead (see [todo.md](todo.md) for the open question of reviving vs. dropping it).
 
 Completing a match (`updateMatchStatus('completed')`, `completeMatchWithWinner`, `completeMatchWithTeamWinner`) only does one stats-adjacent thing now: `determineAndSaveWinnerIfMissing(matchId)` backfills `match_rooms.winner_profile_id` for golf matches that reach `'completed'` without an explicit winner — classic golf (`GolfRoom`) has no win-condition button at all, and any sport can be ended early via the generic "End & Lock" header action before its room's own win condition fires. Every other sport's room sets the winner explicitly (`completeMatchWithWinner`/`completeMatchWithTeamWinner`), so this is a golf-specific fallback, not a general recompute. Failures are logged, never thrown, so the match still closes; practice matches are skipped entirely.
 
@@ -95,7 +95,7 @@ Season points come from `SEASON_POINT_RULES` alone — placement 100 / 50 / 25 w
 
 `getGlobalLeaderboardData()`'s `event_type` switch casts `event_data` (typed `unknown` on `MatchEventRow`) to a per-event-type interface (`ChipOffScoreEventData`, `DartsWinEventData`, `GolfScoreEventData`, …) defined near the top of `stats.ts` — a new event type that should count toward stats needs one of these too (or a cast to an existing one if the shape matches), not just a `case` block, or the added fields will be untyped `any` again.
 
-Derived per-player analytics (strike rate, checkout %, scoring efficiency, …) come from the Postgres views `player_career_analytics` and `fan_engagement_stats`, read directly by `ProfilePage`, `LeaderboardPage`, and `PvPRoom` — also independently recomputed from raw tables, not from `player_career_stats`. Changing one of those metrics is a migration, not a TypeScript edit. `STATS_AUDIT_LOG.md` maps each user-facing metric to its column, formula, and storage path.
+Derived per-player analytics (strike rate, checkout %, scoring efficiency, …) come from the Postgres views `player_career_analytics` and `fan_engagement_stats`, read directly by `ProfilePage`, `LeaderboardPage`, and `PvPRoom` — also independently recomputed from raw tables, not from `player_career_stats`. Changing one of those metrics is a migration, not a TypeScript edit. `STATS_AUDIT_LOG.md` maps each user-facing metric to its column, formula, and storage path — but it's stale as of 2026-07-30 (still describes some metrics as persisted to `player_career_stats`); see [todo.md](todo.md).
 
 ### Realtime
 
@@ -131,6 +131,4 @@ The local folder and the remote `schema_migrations` ledger have gone out of sync
 
 `player_career_stats` has **no INSERT/UPDATE policy at all** as of `20260729224346_revoke_client_writes_player_career_stats.sql` — only the public-read `SELECT` policy survives, so those commands are default-deny under RLS. This was deliberate (see Stats pipeline above): the client stopped writing to this table, so there's no legitimate write path to scope a policy around. Don't "fix" a future RLS audit finding "player_career_stats has no write policy" by adding one back without re-reading why it was removed.
 
-## Known gaps
-
-- Deleting a match is admin-only by design, even for its creator.
+See [todo.md](todo.md) for known gaps, tech debt, and planned work.
