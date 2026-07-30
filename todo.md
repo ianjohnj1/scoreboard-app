@@ -227,11 +227,29 @@ hole — the item that needed zero user growth to matter — is fixed as of
   rather than squashed into one "clean" migration, per this repo's own
   migration-drift lesson: the files should match `supabase migration list`
   exactly, not a tidied-up retelling.
-- **Anyone can create unlimited profiles.** The `profiles` INSERT policy is
-  only `is_admin = false`, and `handleAddGuest` in `MatchRoomPage.tsx`
-  inserts client-side. One script fills the 500 MB database. Fix: route guest
-  creation through a `SECURITY DEFINER` RPC that requires a valid session and
-  rate-limits per session.
+- ~~**Anyone can create unlimited profiles.**~~ **Done 2026-07-30**
+  (`20260730215136_rpc_add_guest_player.sql`). The `profiles` INSERT
+  policy (`is_admin = false`, no session requirement, no rate limit) is
+  dropped outright — it was the only client-side INSERT path into
+  `profiles` (`rpc_signup` is `SECURITY DEFINER` and never depended on it),
+  so with it gone nothing can `INSERT` into `profiles` directly at all.
+  Guest creation now goes through `rpc_add_guest_player()`: requires an
+  active session (`get_current_session_profile_id() IS NOT NULL`, raises
+  otherwise) and rate-limits to 30 guest creations per rolling hour per
+  *creating* session, tracked in a new `guest_creation_log` table (RLS
+  enabled, zero policies — same pattern as `login_attempts`, only the RPC
+  can touch it). Both client call sites (`MatchRoomPage.tsx`,
+  `NewMatchPage.tsx`) now call `addGuestPlayer()` in `src/lib/auth.ts`
+  instead of inserting directly.
+
+  Verified against live: a real session can still create a guest
+  (`is_guest`/`is_admin` correct, logged); simulating 30 prior creations
+  and attempting a 31st correctly raises; a raw client-style `INSERT` as
+  `anon` now fails with an RLS violation instead of succeeding. Verified
+  end-to-end through the actual UI too (Add Guest during New Match setup)
+  — guest created and added to the roster with no console errors — then
+  the test profile it created was deleted since it wasn't a rolled-back
+  transaction like the SQL-level checks.
 - **DartsRoom and CustomRoom never rehydrate from `match_events`.** CLAUDE.md
   requires every sport without normalised side tables to do this, and
   TableTennis/Pool/Basketball/Cards all do — Darts and Custom only ever

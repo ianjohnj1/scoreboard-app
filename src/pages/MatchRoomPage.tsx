@@ -4,7 +4,7 @@ import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Searc
 import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getSportIcon, getSportLabel } from '../lib/matches';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { getAllProfiles } from '../lib/auth';
+import { getAllProfiles, addGuestPlayer } from '../lib/auth';
 import Modal from '../components/Modal';
 import QRCodeModal from '../components/QRCodeModal';
 import UserAvatar from '../components/UserAvatar';
@@ -262,19 +262,7 @@ export default function MatchRoomPage() {
     if (!match || !guestName.trim()) return;
     setIsAddingGuest(true);
     try {
-      const guestUsername = `guest_${Date.now()}`;
-      const { data: newGuest, error } = await supabase
-        .from('profiles')
-        .insert([{
-          username: guestUsername,
-          display_name: guestName.trim(),
-          avatar_color: '#f59e0b',
-          is_guest: true
-        }])
-        .select('id')
-        .single();
-
-      if (error) throw error;
+      const newGuest = await addGuestPlayer(guestName.trim());
       if (newGuest) {
         await handleAddPlayer(newGuest.id);
         setGuestName('');

@@ -39,6 +39,15 @@ export async function loginWithPin(username: string, pin: string): Promise<Profi
   return row ? { ...row, pin_hash: null } : null;
 }
 
+export async function addGuestPlayer(displayName: string): Promise<Profile | null> {
+  const { data, error } = await supabase.rpc('rpc_add_guest_player', {
+    p_display_name: displayName,
+  });
+  if (error) throw error;
+  const row = data?.[0];
+  return row ? { ...row, pin_hash: null } : null;
+}
+
 export async function getAllProfiles(): Promise<Profile[]> {
   const { data, error } = await supabase
     .from('profiles')

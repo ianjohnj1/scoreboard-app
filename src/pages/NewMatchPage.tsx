@@ -4,7 +4,7 @@ import {
   ArrowLeft, ChevronRight, Users, User, Plus, X,
   Check, Search, Settings, AlertCircle
 } from 'lucide-react';
-import { getAllProfiles } from '../lib/auth';
+import { getAllProfiles, addGuestPlayer } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import Avatar from '../components/Avatar';
@@ -12,7 +12,6 @@ import InfoTooltip from '../components/InfoTooltip';
 import LineupOrderBuilder from '../components/LineupOrderBuilder';
 import { getRuleDefinition } from '../data/ruleDefinitions';
 import type { Profile, CricketInnings } from '../lib/supabase';
-import { SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import { generateRoomCode } from '../lib/matches';
 
 function generateUUID() {
@@ -224,28 +223,11 @@ export default function NewMatchPage() {
     if (!guestName.trim()) return;
     setAddingGuest(true);
     try {
-      // Generate a unique username for the guest using a secure random string
-      const guestUsername = `guest_${generateUUID().split('-')[0]}`;
-      
-      const { data: newGuest, error } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            username: guestUsername,
-            display_name: guestName.trim(),
-            avatar_color: '#f59e0b',
-            is_guest: true
-          }
-        ])
-        .select(SAFE_PROFILE_COLUMNS)
-        .single();
-
-      if (error) throw error;
+      const newGuest = await addGuestPlayer(guestName.trim());
 
       if (newGuest) {
-        const safeGuest = { ...newGuest, pin_hash: null };
-        setProfiles(prev => [...prev, safeGuest]);
-        if (activeTeamPicker) addPlayerToGroup(safeGuest, activeTeamPicker);
+        setProfiles(prev => [...prev, newGuest]);
+        if (activeTeamPicker) addPlayerToGroup(newGuest, activeTeamPicker);
         setGuestName('');
       }
     } catch (err) {
