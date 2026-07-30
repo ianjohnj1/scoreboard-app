@@ -304,12 +304,10 @@ export async function recordEvent(
   teamId?: string,
   recordedBy?: string
 ): Promise<void> {
-  // Get sequence num
-  const { count } = await supabase
-    .from('match_events')
-    .select('*', { count: 'exact', head: true })
-    .eq('match_id', matchId);
-
+  // sequence_num is assigned server-side by a BEFORE INSERT trigger (see
+  // 20260730171039_server_side_match_event_sequence_num.sql) - the old
+  // count-then-insert here raced two concurrent scorers against the same
+  // UNIQUE(match_id, sequence_num) constraint.
   const { error } = await supabase
     .from('match_events')
     .insert({
@@ -319,10 +317,9 @@ export async function recordEvent(
       player_id: playerId || null,
       team_id: teamId || null,
       recorded_by: recordedBy || null,
-      sequence_num: (count || 0) + 1,
       is_undone: false,
     });
-  
+
   if (error) throw error;
 }
 

@@ -462,19 +462,17 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         bowl_dots: (bowlerStat?.bowl_dots || 0) + remaining,
       }).eq('id', bowlerStatId);
 
-      // Record dot ball events
-      const { count } = await supabase
-        .from('match_events')
-        .select('*', { count: 'exact', head: true })
-        .eq('match_id', match.id);
-
-      const startSeq = (count || 0) + 1;
-      const events = Array.from({ length: remaining }).map((_, i) => ({
+      // Record dot ball events. sequence_num is assigned server-side by a
+      // BEFORE INSERT trigger (20260730171039_server_side_match_event_sequence_num.sql),
+      // which also handles a multi-row insert like this one correctly -
+      // the old count-then-insert here raced any concurrent scorer, or even
+      // itself against another recordEvent() call, on the
+      // UNIQUE(match_id, sequence_num) constraint.
+      const events = Array.from({ length: remaining }).map(() => ({
         match_id: match.id,
         event_type: 'delivery',
         event_data: { runs: 0, extra: null, auto_dot: true },
         recorded_by: currentUser?.id || null,
-        sequence_num: startSeq + i,
         is_undone: false
       }));
 
