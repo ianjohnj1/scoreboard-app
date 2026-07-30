@@ -1,9 +1,10 @@
 # TODO
 
 Tracks known gaps, unresolved tech debt, and planned features for this app.
-`CLAUDE.md` documents what's already true of the code; this file is where
-forward-looking intent lives instead — update it directly as scope changes,
-rather than letting it accumulate in CLAUDE.md.
+`CLAUDE.md` documents what's already true of the code; completed fixes and
+the incidents behind them live in [docs/fix-history.md](docs/fix-history.md)
+instead of here — this file only carries forward-looking intent, so it
+stays short. Update it directly as scope changes.
 
 Items below are ordered by what blocks the scaling goal, not by type. Each
 one says what's wrong, where, and what the fix is.
@@ -28,119 +29,17 @@ nothing prunes or caches, so it arrives with time even at flat user count. At
 20 users playing ~8 matches/week that's ~400 matches/year, which reaches the
 degradation zone in about a year with zero growth.
 
-**All four P0 items are done as of 2026-07-30** — see the P0 section below
-for what shipped and how each was verified. What broke first, in order, and
-how each was addressed:
-
-1. `getGlobalLeaderboardData()` client compute — was O(matches × events);
-   fixed by grouping child rows into a `Map` before the per-match loop.
-2. `getGlobalLeaderboardData()` payload/egress — was downloading every
-   `match_event` ever recorded on every load; fixed by pushing the per-event
-   reduction into a Postgres view, cutting the per-match cost 42x.
-3. Sport-tab switching and realtime-triggered reloads re-running the whole
-   pull — fixed by fetching once and deriving per-tab views client-side, plus
-   debouncing the realtime refresh.
-4. `recordEvent()`'s sequence-number race capping concurrent scorers per
-   match at one — fixed by moving `sequence_num` assignment into a
-   `BEFORE INSERT` trigger serialized per-match with an advisory lock.
-
-Free-plan egress now allows roughly 25x more leaderboard loads per cumulative
-match than before item 2 (measured: 34,376 → 2,248 bytes gzipped per load on
-the live dataset). Postgres connection pool pressure eases with it, since
-leaderboard queries no longer hold a connection for seconds. Realtime
-concurrency (200 conns) and DB size (~4,300 matches' worth of events) were
-never binding before those. The free tier's 7-day inactivity auto-pause is a
-separate availability limit that no code change fixes.
-
-None of this replaces Pro ($25/mo, 250 GB egress, no auto-pause) once the
-user base is real — it buys headroom so that upgrade is a choice made from
-comfortable footing, not a fix for something already breaking. **What's left
-before 100 users is the P1 list below.** The `rpc_login` account-takeover
-hole — the item that needed zero user growth to matter — is fixed as of
-2026-07-30; see its entry below for what's still open (7 stranded profiles).
+**The four P0 items below are all done, and so is the `rpc_login`
+account-takeover hole** (the one item that needed zero user growth to
+matter) — see [docs/fix-history.md](docs/fix-history.md) for what shipped
+and how each was verified. **What's left before 100 users is the P1 list
+below.**
 
 ## P0 — blocks 100 users
 
-- ~~**`getGlobalLeaderboardData()` is quadratic in match count.**~~ **Done
-  2026-07-30.** `groupByMatchId()` in `src/lib/stats.ts` buckets players,
-  events, and cricket stats by `match_id` in one pass before the per-match
-  loop, replacing three `.filter()`-per-match scans. Verified partition-
-  identical to the old behaviour against live data (same elements, same
-  order, same identity), so leaderboard output is unchanged. Measured on
-  synthetic data at the real 163-events/match ratio: 300 matches 114ms → 0.8ms,
-  1,000 matches 1,370ms → 2.0ms, 2,000 matches 6,320ms → 8.2ms (desktop; a
-  mid-range phone runs roughly 4–8x slower). The compute wall is now well past
-  10,000 matches — **payload/egress (next item) is the binding constraint from
-  here.**
-- ~~**The leaderboard pulls the entire database on every load.**~~ **Done
-  2026-07-30**, scoped to pushing the per-event reduction down (see the
-  scoping note below). The `leaderboard_match_player_scores` view
-  (`20260730143009`, refactored for testability by `20260730143429`) reduces
-  `match_events` server-side to one row per (match, roster player);
-  `getGlobalLeaderboardData()` no longer fetches `match_events`,
-  `match_players`, or `cricket_player_stats` at all, and `match_rooms` is
-  down to five columns from `select('*')`. Measured on live data: **34,376 →
-  2,248 bytes gzipped per load, and 16,452 → 388 bytes per match (42x)** on
-  the part that grows with history. At 1,000 cumulative matches that turns
-  the free plan's 5 GB from ~740 leaderboard loads into ~13,000.
-
-  Verified two ways, because live data covers only 3 of 14 event types: a
-  differential against a faithful reimplementation of the old TypeScript
-  reduction over live rows (105 field comparisons, 0 mismatches, no missing
-  or extra rows), and 39 synthetic per-branch cases through
-  `match_event_points()` covering **all fourteen** event types including the
-  eleven with no data (0 mismatches). Rendered leaderboard values are
-  unchanged from a pre-change snapshot.
-
-  Placement, season points, milestones, lifetime counters and best scores
-  were deliberately **not** ported and still live in `stats.ts`. That keeps
-  `SEASON_POINT_RULES` the single source of truth for the maths and the
-  explainer modal both, so the constant-vs-hardcoded-SQL drift risk noted
-  during the audit never materialised. Aggregating those in SQL too would
-  cut payload perhaps another 5-10x (one row per player per sport rather
-  than per match) — worth revisiting only if egress becomes binding again,
-  and only behind a test suite.
-- ~~**Every sport-tab switch re-runs the whole pull.**~~ **Done 2026-07-30.**
-  `loadLeaderboard` in `src/pages/LeaderboardPage.tsx` now fetches
-  `rawStats` once, with no `sport` dependency; filtering, the
-  `sport === 'all'` cross-sport aggregation, and sorting all moved into a
-  `useMemo` keyed on `[rawStats, sport]`, so switching tabs is a synchronous
-  client-side recompute with zero network calls. Verified by instrumenting
-  `performance.getEntriesByType('resource')` in the browser preview and
-  clicking through five tabs (Global MVP → Cricket → Golf → Darts →
-  Basketball → back to Global MVP): the only Supabase requests observed
-  were the pre-existing 30s session heartbeat and lazy avatar image loads,
-  zero calls to `match_rooms`/`leaderboard_match_player_scores`/`profiles`
-  after the initial mount. Rendered values unchanged throughout. The
-  `leaderboard-live` realtime subscription is also now debounced 1500ms
-  (`refreshTimeoutRef`, mirroring the pattern already used in
-  `GolfRoom`/`ChipOffRoom`/`CricketRoom` for their own realtime channels),
-  so a burst of match completions collapses into one reload instead of one
-  per event. This also let the `refreshKey` state/effect indirection be
-  removed in favour of calling `loadLeaderboard()` directly.
-- ~~**`recordEvent()` has a sequence-number race.**~~ **Done 2026-07-30.**
-  `sequence_num` is now assigned by a `BEFORE INSERT` trigger
-  (`set_match_event_sequence_num()`,
-  `20260730171039_server_side_match_event_sequence_num.sql`) instead of a
-  client-side `SELECT count(*)` then `INSERT count+1` - the same race
-  existed twice, independently, in `recordEvent()` (`src/lib/matches.ts`)
-  and in `CricketRoom.tsx`'s `completeOverEarly()` bulk dot-ball insert.
-  The trigger takes a transaction-scoped advisory lock keyed by `match_id`
-  (`pg_advisory_xact_lock(hashtextextended(...))`) so concurrent inserts
-  serialize per-match without a global bottleneck, then computes
-  `max(sequence_num)+1` under that lock. Verified three ways: (1) a scratch
-  TEMP table confirmed Postgres advances row visibility between rows of the
-  *same* multi-row INSERT, so `completeOverEarly()`'s bulk insert gets
-  correctly incrementing values in one statement (4 rows in one group came
-  back 1,2,3,4, an unrelated group's row came back 1); (2) a real multi-row
-  insert against a live match continued correctly from the existing max
-  (311 → 312, 313) and a client-supplied stale value (9999) was silently
-  overwritten with the correct next value (314), both cleaned up
-  immediately after; (3) end-to-end through the actual app UI - three rapid
-  scoring taps on a live practice match produced clean sequential
-  `sequence_num` values 1, 2, 3 with correct scores and no console errors,
-  confirmed against the database, then the scratch match was cleaned up.
-  Both call sites no longer compute or send `sequence_num` at all.
+All four done as of 2026-07-30 (leaderboard compute, leaderboard payload,
+sport-tab refetching, `sequence_num` write race) — full write-up in
+[docs/fix-history.md](docs/fix-history.md#performance--scaling--p0-2026-07-30).
 
 ## P1 — needed at or before 100 users
 
@@ -159,125 +58,15 @@ hole — the item that needed zero user growth to matter — is fixed as of
   refactor. Fix is in the rooms, not the view: pass `player_id` on the
   `recordEvent()` call. Note that fixing it will retroactively change season
   points for any existing match of those sports.
-
-- ~~**`rpc_login` lets anyone claim an unclaimed account with any PIN.**~~
-  **Done 2026-07-30**, in two steps. `20260730204939_fix_rpc_login_account_takeover.sql`
-  first removed the null-`pin_hash` fallback branch entirely — it accepted
-  any PIN for a profile with `pin_hash IS NULL AND is_guest = false` and set
-  it as that account's permanent PIN. Verified against live in a
-  rolled-back transaction: guessing a PIN for one of the 7 affected
-  usernames returned no rows and left `pin_hash` still null; a real login
-  (`claudetester`/`1234`) was unaffected.
-
-  The 7 accounts this stranded turned out **not** to be unclaimed
-  placeholders — they're real accounts real people had already set up and
-  used. `20260723000004_reset_pin_hash.sql` unified two incompatible PIN-
-  hashing schemes (`LoginPage.tsx` was hashing unsalted, `lib/auth.ts`
-  salted) by wiping `pin_hash` to `NULL` for *every* profile, expecting
-  everyone to log back in once and silently re-set it — the null-`pin_hash`
-  fallback removed above was that self-service recovery path, not a
-  pre-signup "claim your placeholder" feature. Most users completed that
-  re-login already (which is why their `pin_hash` is no longer null); these
-  7 are simply the stragglers who hadn't opened the app again since.
-
-  `20260730211610_scope_rpc_login_recovery_fallback.sql` restores that
-  recovery path, but scoped to a fixed, closed list of exactly these 7
-  usernames (`mrchanman`, `primeserpentz`, `dnagle9801@gmail.com`,
-  `bandy1703@hotmail.com`, `worko06`, `chole`, `andrewjones98`) instead of
-  any row with `pin_hash IS NULL` — so these specific people can still
-  recover their own account with any PIN on next login, but no other
-  account (present or future) can ever be claimed this way again.
-  `profiles.username` has a DB-level `UNIQUE` constraint, so there's no way
-  for another row to be created to shadow one of these usernames. Verified
-  against live in a rolled-back transaction: `worko06` still recovers (any
-  PIN accepted, `pin_hash` gets set); a synthetic non-listed profile with
-  `pin_hash IS NULL` does not (0 rows returned). Do not add usernames to
-  this list for new or placeholder accounts — `rpc_signup` always sets a
-  real `pin_hash` immediately, so no legitimately-created account should
-  ever need this path; the list should only grow if another genuine
-  pre-reset straggler turns up.
-- ~~**No rate limiting on `rpc_login`.**~~ **Done 2026-07-30**
-  (`20260730212541_rate_limit_rpc_login.sql`). A new `login_attempts` table
-  (RLS enabled, zero policies — only reachable through `rpc_login`'s
-  `SECURITY DEFINER`) logs each failed attempt; the RPC now checks the
-  count for that username in the last 15 minutes *before* touching any
-  credential material, and rejects with the same empty result as a wrong
-  PIN if it's at or above 10 — so a caller can't tell "wrong" from "locked
-  out," and even the correct PIN is rejected while locked out. At 10
-  attempts/15min, exhausting the 10,000-PIN keyspace takes over 10 days.
-  Scoped to per-username counting, not per-IP (no reliable caller IP
-  inside a `SECURITY DEFINER` function here) — closes the specific threat
-  this item was filed for (brute-forcing one victim's PIN), not a
-  low-and-slow scan across many usernames, which needs the enumerable-
-  usernames P2 item fixed first. Stale rows are pruned inline per-username
-  on that username's own next login call, no `pg_cron` dependency.
-
-  **This shipped a genuine ~1-minute outage on first deploy**, worth
-  recording plainly rather than glossing over: `rpc_login`'s
-  `RETURNS TABLE` already declares an output column named `username`, and
-  the first version of this migration referenced `username` unqualified in
-  the new rate-limit queries — ambiguous against that output column, so
-  Postgres rejected every call to `rpc_login` with "column reference
-  ambiguous," breaking *all* login, not just the rate-limited path. Caught
-  immediately by testing `rpc_login('claudetester', '1234')` right after
-  deploying, fixed forward in `20260730213012_fix_rpc_login_ambiguous_username_column.sql`
-  by qualifying every `login_attempts.username` reference. Both migration
-  files are kept as separate, timestamp-accurate entries — the first one
-  left exactly as it was actually live (broken), not edited in place —
-  rather than squashed into one "clean" migration, per this repo's own
-  migration-drift lesson: the files should match `supabase migration list`
-  exactly, not a tidied-up retelling.
-- ~~**Anyone can create unlimited profiles.**~~ **Done 2026-07-30**
-  (`20260730215136_rpc_add_guest_player.sql`). The `profiles` INSERT
-  policy (`is_admin = false`, no session requirement, no rate limit) is
-  dropped outright — it was the only client-side INSERT path into
-  `profiles` (`rpc_signup` is `SECURITY DEFINER` and never depended on it),
-  so with it gone nothing can `INSERT` into `profiles` directly at all.
-  Guest creation now goes through `rpc_add_guest_player()`: requires an
-  active session (`get_current_session_profile_id() IS NOT NULL`, raises
-  otherwise) and rate-limits to 30 guest creations per rolling hour per
-  *creating* session, tracked in a new `guest_creation_log` table (RLS
-  enabled, zero policies — same pattern as `login_attempts`, only the RPC
-  can touch it). Both client call sites (`MatchRoomPage.tsx`,
-  `NewMatchPage.tsx`) now call `addGuestPlayer()` in `src/lib/auth.ts`
-  instead of inserting directly.
-
-  Verified against live: a real session can still create a guest
-  (`is_guest`/`is_admin` correct, logged); simulating 30 prior creations
-  and attempting a 31st correctly raises; a raw client-style `INSERT` as
-  `anon` now fails with an RLS violation instead of succeeding. Verified
-  end-to-end through the actual UI too (Add Guest during New Match setup)
-  — guest created and added to the roster with no console errors — then
-  the test profile it created was deleted since it wasn't a rolled-back
-  transaction like the SQL-level checks.
-- **DartsRoom and CustomRoom never rehydrate from `match_events`.** CLAUDE.md
-  requires every sport without normalised side tables to do this, and
-  TableTennis/Pool/Basketball/Cards all do — Darts and Custom only ever
+- **`DartsRoom` and `CustomRoom` never rehydrate from `match_events`.**
+  CLAUDE.md requires every sport without normalised side tables to do this,
+  and TableTennis/Pool/Basketball/Cards all do — Darts and Custom only ever
   *write* (`recordEvent` at `DartsRoom.tsx:182`), with state coming from
-  `buildInitialState(...)`. Refreshing mid-501 resets the score to the start.
-  Neither room has a realtime subscription either, so a second device never
-  syncs. Darts is the most stateful sport in the app, so this is the worst
-  room to have it in. Confirmed bug, not a scaling issue — but at 100 users
-  it stops being rare.
-- ~~**`active_sessions` is never garbage-collected.**~~ **Done 2026-07-30**
-  (`20260730214556_garbage_collect_active_sessions.sql`). Enabled Supabase
-  Cron (`pg_cron`, per the standard install snippet) and scheduled a daily
-  job at 03:00 UTC deleting rows with `last_seen < now() - interval '7 days'`;
-  `cron.schedule()` upserts by job name, so the migration is safe to re-run.
-  Also ran the same delete once immediately to clear the existing backlog
-  rather than leaving it for the first scheduled run.
-
-  Re-measuring before the fix found the 307-on-one-profile detail wasn't
-  what it looked like: every profile except one already had exactly one
-  session row (`rpc_login`'s reuse logic — find-or-create, not always-insert
-  — was working correctly the whole time). The 307 were all on a single
-  profile (almost certainly dev/test churn from repeated login/logout
-  during active development, spread over the whole June–July build
-  period), not 16 real users each accumulating hundreds of rows. Verified
-  against live: row count went from 316 to 3 after the cleanup ran, the
-  3 survivors are exactly the sessions actually active within the last
-  day (`claudetester` plus two recent `ian` sessions), and `rpc_login`
-  still works normally afterward.
+  `buildInitialState(...)`. Refreshing mid-501 resets the score to the
+  start. Neither room has a realtime subscription either, so a second
+  device never syncs. Darts is the most stateful sport in the app, so this
+  is the worst room to have it in. Confirmed bug, not a scaling issue — but
+  at 100 users it stops being rare.
 - **Unfiltered global realtime subscriptions.** `fanboy-live` in
   `LeaderboardPage.tsx` listens to *every* comment INSERT app-wide; the
   leaderboard and `ProfilePage` both listen to every completed match. Fan-out
@@ -296,6 +85,11 @@ hole — the item that needed zero user growth to matter — is fixed as of
   catch it. Fix: one `SECURITY DEFINER` RPC doing the whole teardown in a
   transaction.
 
+*Done this session, full detail in fix-history.md: the `rpc_login`
+account-takeover hole and its scoped recovery fallback, `rpc_login` rate
+limiting, `active_sessions` garbage collection, and unlimited profile
+creation.*
+
 ## P2 — headroom beyond 100 users
 
 - **Every SELECT policy is `USING (true)`.** The anon key ships in the client
@@ -303,7 +97,9 @@ hole — the item that needed zero user growth to matter — is fixed as of
   deliberate call for a mates' scoreboard; a blocker for any public or
   multi-group audience. Decide which way this app is going before building on
   top of it — scoping reads later means revisiting every list page, and it
-  interacts with the VOLATILE-helper item above.
+  interacts with the VOLATILE-helper item above. It's also why `rpc_login`'s
+  rate limiting (fix-history.md) only stops brute-forcing one known
+  username, not a low-and-slow scan across many.
 - **66 "multiple permissive policies" advisor warnings.** Postgres ORs
   permissive policies and evaluates every one, so duplicates are a per-row
   function call each. Worst on `cricket_innings` (24), `cricket_player_stats`
@@ -330,50 +126,23 @@ hole — the item that needed zero user growth to matter — is fixed as of
 - **Match deletion is admin-only, even for the creator.** Currently by
   design (see `deleteMatch()` in `src/lib/matches.ts`), but worth revisiting
   — a creator may reasonably expect to delete their own not-yet-played match.
-- ~~**No automated test suite.**~~ **Partially done 2026-07-30.** Vitest is
-  installed (`npm test`), covering pure logic with no Supabase/DOM
-  dependency: the three darts sub-game reducers
-  (`src/lib/darts/*Engine.test.ts`), the dashboard status partition helpers
-  and sport/variant label lookups (`src/lib/matches.test.ts`), and the
-  season-points/grouping helpers from the P0 leaderboard rewrite
-  (`src/lib/stats.test.ts`) — 47 tests total. See the Testing section in
-  `CLAUDE.md` for what's covered and why.
-
-  ~~`match_event_points()` has no repeatable test harness.~~ **Done
-  2026-07-30**: `supabase/tests/database/match_event_points.test.sql` is a
-  checked-in pgTAP file (39 assertions, all 14 branches plus
-  `darts_event_score()`'s single-throw/darts-array paths and the
-  `point`/`score` falsy-zero quirk). Verified by running it against the live
-  project via the Supabase MCP's `execute_sql` (transaction always rolled
-  back — pure `SELECT`s, so nothing was ever at risk); all 39 pass.
-
-  ~~No RLS/policy regression tests.~~ **Done 2026-07-30**:
-  `supabase/tests/database/rls_smoke.test.sql` (17 assertions) covers the
-  admin-override and ownership-isolation bug classes described above. Also
-  verified against live the same way — seeds synthetic profiles/sessions/a
-  match, impersonates each identity via the `request.headers` GUC trick,
-  runs the assertions, then rolls back (confirmed zero rows and no
-  `pgtap` extension left behind afterward). All 17 pass now; the first run
-  caught a bug in the *test's* expectation (see CLAUDE.md's Testing
-  section), not in the app.
-
-  Neither file is wired to run automatically anywhere yet — no local
-  Supabase stack to `supabase test db` against (see Environment in
-  `CLAUDE.md`), and no CI. Next step for both is deciding where they run
-  on a recurring basis (local Docker stack vs. a Supabase branch vs. CI),
-  not writing more assertions.
-
-  Still gaps, in rough priority order:
+- **Test suite gaps.** Vitest + two pgTAP files exist — see CLAUDE.md's
+  Testing section for what's covered and how to run them (write-up of how
+  they were built in fix-history.md). Still open, in rough priority order:
   - **`getGlobalLeaderboardData()`'s reduction loop** (placement, milestone
-    SP, chip-off team ordering) is still untested — it's tightly coupled to
-    chained Supabase calls, so testing it means either extracting the
-    reduction into a pure function or building a fake PostgREST client.
+    SP, chip-off team ordering) is untested — tightly coupled to chained
+    Supabase calls, so testing it means either extracting the reduction
+    into a pure function or building a fake PostgREST client.
   - **`rls_smoke.test.sql` covers two bug classes on a handful of tables,
-    not the full RLS surface.** Most policies (match_teams, comments,
+    not the full RLS surface.** Most policies (`match_teams`, `comments`,
     cricket/golf side tables, …) still have no test at all.
   - **No component/e2e tests and no CI.** The manual browser-preview QA
     loop is still the only verification for anything UI-facing, and
     `npm test` isn't wired into any CI check yet (there is no CI).
+  - **Neither pgTAP file runs automatically anywhere** — no local Supabase
+    stack, no CI. Next step is deciding where they run on a recurring
+    basis (local Docker stack vs. a Supabase branch vs. CI), not writing
+    more assertions.
 - **Sport/variant dispatch tables can drift silently.** Adding a sport or
   variant touches four places (`getSportRoom()` in `MatchRoomPage.tsx`; the
   `sportRooms` map *and* golf-variant branch in `SpectatorPage.tsx`;
