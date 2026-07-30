@@ -161,26 +161,41 @@ hole — the item that needed zero user growth to matter — is fixed as of
   points for any existing match of those sports.
 
 - ~~**`rpc_login` lets anyone claim an unclaimed account with any PIN.**~~
-  **Done 2026-07-30** (`20260730204939_fix_rpc_login_account_takeover.sql`).
-  The null-`pin_hash` fallback branch — which accepted any PIN for a profile
-  with `pin_hash IS NULL AND is_guest = false` and set it as that account's
-  PIN — is removed; login now only succeeds against a real `pin_hash`
-  match. Verified against live in a rolled-back transaction: guessing a PIN
-  for one of the 7 affected usernames now returns no rows and leaves
-  `pin_hash` still null (previously it would have silently claimed the
-  account); a real login (`claudetester`/`1234`) still succeeds unchanged.
+  **Done 2026-07-30**, in two steps. `20260730204939_fix_rpc_login_account_takeover.sql`
+  first removed the null-`pin_hash` fallback branch entirely — it accepted
+  any PIN for a profile with `pin_hash IS NULL AND is_guest = false` and set
+  it as that account's permanent PIN. Verified against live in a
+  rolled-back transaction: guessing a PIN for one of the 7 affected
+  usernames returned no rows and left `pin_hash` still null; a real login
+  (`claudetester`/`1234`) was unaffected.
 
-  **Still open: the 7 profiles this fix stranded.** They were never
-  malicious data — real usernames (some are email addresses), pre-created
-  with no PIN so the real owner could set one on first login. That's now
-  impossible: nobody can log into them at all until they're either given a
-  real claim flow (needs some out-of-band-verified mechanism, since this
-  app has no email/SMS) or manually resolved by an admin (e.g. an
-  admin-only "set this profile's PIN" action, communicated to the friend
-  out of band). Deliberately not decided or touched by this fix — it's a
-  product/data decision, not a security one. Affected usernames: `mrchanman`,
-  `primeserpentz`, `dnagle9801@gmail.com`, `bandy1703@hotmail.com`,
-  `worko06`, `chole`, `andrewjones98`.
+  The 7 accounts this stranded turned out **not** to be unclaimed
+  placeholders — they're real accounts real people had already set up and
+  used. `20260723000004_reset_pin_hash.sql` unified two incompatible PIN-
+  hashing schemes (`LoginPage.tsx` was hashing unsalted, `lib/auth.ts`
+  salted) by wiping `pin_hash` to `NULL` for *every* profile, expecting
+  everyone to log back in once and silently re-set it — the null-`pin_hash`
+  fallback removed above was that self-service recovery path, not a
+  pre-signup "claim your placeholder" feature. Most users completed that
+  re-login already (which is why their `pin_hash` is no longer null); these
+  7 are simply the stragglers who hadn't opened the app again since.
+
+  `20260730211610_scope_rpc_login_recovery_fallback.sql` restores that
+  recovery path, but scoped to a fixed, closed list of exactly these 7
+  usernames (`mrchanman`, `primeserpentz`, `dnagle9801@gmail.com`,
+  `bandy1703@hotmail.com`, `worko06`, `chole`, `andrewjones98`) instead of
+  any row with `pin_hash IS NULL` — so these specific people can still
+  recover their own account with any PIN on next login, but no other
+  account (present or future) can ever be claimed this way again.
+  `profiles.username` has a DB-level `UNIQUE` constraint, so there's no way
+  for another row to be created to shadow one of these usernames. Verified
+  against live in a rolled-back transaction: `worko06` still recovers (any
+  PIN accepted, `pin_hash` gets set); a synthetic non-listed profile with
+  `pin_hash IS NULL` does not (0 rows returned). Do not add usernames to
+  this list for new or placeholder accounts — `rpc_signup` always sets a
+  real `pin_hash` immediately, so no legitimately-created account should
+  ever need this path; the list should only grow if another genuine
+  pre-reset straggler turns up.
 - **No rate limiting on `rpc_login`.** 4-digit PIN, static salt
   (`scorekeeper:${pin}:salt2024`), single SHA-256 round — 10,000 candidates
   is seconds of parallel requests. Fix: attempt counter keyed on
