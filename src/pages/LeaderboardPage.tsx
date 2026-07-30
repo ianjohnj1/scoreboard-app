@@ -57,8 +57,7 @@ export default function LeaderboardPage() {
               matches_lost: 0,
               total_score: 0,
               season_points: 0,
-              best_score: null,
-              extra_stats: {} as GlobalPlayerStats['extra_stats']
+              best_score: null
             };
           }
           acc[pid].matches_played += curr.matches_played;
@@ -77,13 +76,22 @@ export default function LeaderboardPage() {
         processedData = Object.values(aggregated);
       }
 
-      // Sort based on selection
+      // Sort based on selection. Ties fall back to display name then profile id
+      // so equal-scoring players hold a stable rank between loads - the primary
+      // metric alone left their order down to whatever row order the query
+      // happened to return, which made ranks visibly shuffle for no reason.
+      const primaryMetric = (entry: LeaderboardEntry) => {
+        if (sport === 'cricket') return entry.cricket_lifetime_runs || 0;
+        if (sport === 'chip_off') return entry.golf_lifetime_points || 0;
+        return entry.season_points;
+      };
+
       processedData.sort((a, b) => {
-        if (sport === 'all') return b.season_points - a.season_points;
-        if (sport === 'golf') return b.season_points - a.season_points;
-        if (sport === 'cricket') return (b.cricket_lifetime_runs || 0) - (a.cricket_lifetime_runs || 0);
-        if (sport === 'chip_off') return (b.golf_lifetime_points || 0) - (a.golf_lifetime_points || 0);
-        return b.season_points - a.season_points;
+        const byMetric = primaryMetric(b) - primaryMetric(a);
+        if (byMetric !== 0) return byMetric;
+        const byName = (a.profile?.display_name || '').localeCompare(b.profile?.display_name || '');
+        if (byName !== 0) return byName;
+        return a.profile_id.localeCompare(b.profile_id);
       });
 
       setEntries(processedData.slice(0, 50));

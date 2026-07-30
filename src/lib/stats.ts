@@ -25,110 +25,32 @@ export function calculatePlacementSP(rank: number): number {
   return SEASON_POINT_RULES.placement[3].points;
 }
 
-interface DartsThrowData {
-  scoredPoints?: number;
-  ring?: string;
-  segment?: string;
-}
+interface ChipOffScoreEventData { points?: number }
+interface GolfScoreEventData { strokes?: number; holeInOne?: boolean }
 
-type DartsDartEntry = number | DartsThrowData;
-
-interface DartsScoreEventData {
-  throw?: DartsThrowData;
-  darts?: DartsDartEntry[];
-}
-
-function getDartsEventScore(eventData: DartsScoreEventData) {
-  if (eventData?.throw && typeof eventData.throw.scoredPoints === 'number') {
-    return eventData.throw.scoredPoints;
-  }
-
-  if (Array.isArray(eventData?.darts)) {
-    return eventData.darts.reduce((sum: number, dart: DartsDartEntry) => {
-      if (typeof dart === 'number') return sum + dart;
-      return sum + (dart?.scoredPoints || 0);
-    }, 0);
-  }
-
-  return 0;
-}
-
-function getDartsEventThrowCount(eventData: DartsScoreEventData) {
-  if (eventData?.throw) return 1;
-  if (Array.isArray(eventData?.darts)) return eventData.darts.length;
-  return 0;
-}
-
-interface MatchEventRow {
-  event_type: string;
-  player_id: string | null;
+// One row of the leaderboard_match_player_scores view: a single match's
+// contribution for a single roster player, already reduced from match_events
+// by Postgres. The view emits a row per roster player even when they recorded
+// nothing, so these are never undefined.
+//
+// This replaced a ~30-field in-memory accumulator. The dropped fields
+// (darts_thrown, busts, checkouts, double_out_finishes, atw_*, killer_*,
+// wins, frames, sets, balls, total_putt_attempts, clutch_putts, total_chips,
+// scoring_chips) were recomputed on every leaderboard load and read by nothing
+// - the only consumer, LeaderboardPage, never touched extra_stats. Per-player
+// analytics of that kind come from the player_career_analytics view instead.
+export interface MatchPlayerScoreRow {
+  match_id: string;
+  profile_id: string;
   team_id: string | null;
-  event_data: unknown;
-}
-
-interface PlayerStatAccumulator {
   points: number;
-  tens: number;
-  wins: number;
-  frames: number;
-  sets: number;
   runs: number;
   wickets: number;
-  balls: number;
   strokes: number;
   hio: number;
-  darts_thrown?: number;
-  busts?: number;
-  checkouts?: number;
-  double_out_finishes?: number;
-  atw_attempts?: number;
-  atw_successful_hits?: number;
-  atw_advances?: number;
-  atw_bull_finishes?: number;
-  killer_attempts?: number;
-  killer_activations?: number;
-  killer_opponent_lives_removed?: number;
-  killer_self_penalties?: number;
-  killer_eliminations_secured?: number;
-  killer_times_eliminated?: number;
-  killer_target_hit_attempts?: number;
-  killer_target_hit_successes?: number;
-  holed_putts_total?: number;
-  total_putt_attempts?: number;
-  clutch_putts?: number;
-  total_chips?: number;
-  scoring_chips?: number;
+  tens: number;
+  holed_putts_total: number;
 }
-
-function newPlayerStatAccumulator(): PlayerStatAccumulator {
-  return {
-    points: 0, tens: 0, wins: 0, frames: 0, sets: 0,
-    runs: 0, wickets: 0, balls: 0, strokes: 0, hio: 0
-  };
-}
-
-interface ChipOffScoreEventData { points?: number }
-interface DartsWinEventData extends DartsScoreEventData { checkout?: boolean }
-interface DartsAtwEventData extends DartsScoreEventData {
-  advanced_by?: number;
-  hit_target?: boolean;
-  winner_profile_id?: string;
-}
-interface DartsKillerEventData extends DartsScoreEventData {
-  eliminated_player_ids?: string[];
-  activated?: boolean;
-  hit_opponent_id?: string;
-  self_penalty?: boolean;
-}
-interface BballScoreEventData { pts?: number }
-interface CardsRoundEventData { round?: Record<string, number> }
-interface CustomScoreEventData { value?: number }
-interface DeliveryEventData { runs?: number; extra?: string }
-interface WicketEventData { dismissedBy?: string }
-interface GolfScoreEventData { strokes?: number; holeInOne?: boolean }
-interface PointEventData { amount?: number }
-interface PlayerTeamRoutingEventData { player?: number; team?: number }
-interface PuttAttemptEventData { outcome?: string }
 
 type SafeProfile = Omit<Profile, 'pin_hash'>;
 
@@ -150,9 +72,6 @@ export interface GlobalPlayerStats {
   cricket_lifetime_wickets: number;
   golf_lifetime_points: number;
   golf_lifetime_hio: number;
-  chip_off_total_chips: number;
-  chip_off_scoring_chips: number;
-  extra_stats: PlayerStatAccumulator;
 }
 
 interface MatchStatsListEntry {
@@ -160,7 +79,7 @@ interface MatchStatsListEntry {
   team_id: string | null;
   score: number;
   is_winner: boolean;
-  extra: PlayerStatAccumulator;
+  extra: MatchPlayerScoreRow;
 }
 
 // Some sports never get an explicit winner from their room's own scoring UI -
@@ -322,10 +241,12 @@ function groupByMatchId<T extends { match_id: string }>(rows: T[] | null): Map<s
 }
 
 export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
-  // 1. Fetch all completed matches
+  // 1. Fetch all completed matches. Only the columns the placement/season-point
+  // logic below actually reads - this used to be select('*'), which dragged
+  // custom_config, room_code and timestamps across the wire for every match.
   const { data: matches, error: matchesError } = await supabase
     .from('match_rooms')
-    .select('*')
+    .select('id, sport, house_rules, winner_profile_id, winner_team_id')
     .eq('status', 'completed')
     .eq('is_practice', false);
 
@@ -334,18 +255,22 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
 
   const matchIds = matches.map(m => m.id);
 
-  // 2. Fetch all players and events for these matches
-  const [{ data: players }, { data: events }, { data: profiles }, { data: cricketStats }] = await Promise.all([
-    supabase.from('match_players').select('*').in('match_id', matchIds),
-    supabase.from('match_events').select('*').in('match_id', matchIds).eq('is_undone', false),
-    supabase.from('profiles').select(SAFE_PROFILE_COLUMNS),
-    supabase.from('cricket_player_stats').select('*').in('match_id', matchIds)
+  // 2. Per-player scores come pre-reduced from Postgres now. The view collapses
+  // every match_event into one row per (match, roster player), so this pulls
+  // ~5 rows per match instead of the ~163 raw events it used to - see
+  // supabase/migrations/20260730143009_leaderboard_match_player_scores_view.sql.
+  // match_players and cricket_player_stats aren't fetched at all any more:
+  // the view already emits a row per roster player (zeros included) and folds
+  // cricket's side table in behind the same columns.
+  const [{ data: scores, error: scoresError }, { data: profiles }] = await Promise.all([
+    supabase.from('leaderboard_match_player_scores').select('*').in('match_id', matchIds),
+    supabase.from('profiles').select(SAFE_PROFILE_COLUMNS)
   ]);
 
+  if (scoresError) throw scoresError;
+
   const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-  const playersByMatch = groupByMatchId(players);
-  const eventsByMatch = groupByMatchId(events);
-  const cricketStatsByMatch = groupByMatchId(cricketStats);
+  const scoresByMatch = groupByMatchId(scores as MatchPlayerScoreRow[] | null);
   const globalStats = new Map<string, GlobalPlayerStats>();
 
   // Helper to get/init global player stats
@@ -369,10 +294,7 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
         cricket_lifetime_runs: 0,
         cricket_lifetime_wickets: 0,
         golf_lifetime_points: 0,
-        golf_lifetime_hio: 0,
-        chip_off_total_chips: 0,
-        chip_off_scoring_chips: 0,
-        extra_stats: newPlayerStatAccumulator()
+        golf_lifetime_hio: 0
       });
     }
     return globalStats.get(key)!;
@@ -380,188 +302,42 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
 
   // 3. Process each match
   for (const match of matches) {
-    // These are the grouped arrays themselves, not per-match copies - read
-    // only, never mutate them in place.
-    const matchPlayers = playersByMatch.get(match.id) || [];
-    const matchEvents = eventsByMatch.get(match.id) || [];
+    // The grouped array itself, not a per-match copy - read only, never mutate
+    // it in place. One row per roster player, already reduced by the view.
+    const matchScores = scoresByMatch.get(match.id) || [];
     const isChipOff = match.sport === 'golf' && (match.house_rules as { variant?: string })?.variant === 'chip_off';
     const isPuttVsPutt = match.sport === 'golf' && (match.house_rules as { variant?: string })?.variant === 'putt_vs_putt';
     const isChipOffTeamPlay = isChipOff && Boolean((match.house_rules as { team_play?: boolean })?.team_play);
 
-    const playerMap = new Map<string, PlayerStatAccumulator>();
-
-    if (match.sport === 'cricket') {
-      const matchCricketStats = cricketStatsByMatch.get(match.id) || [];
-      matchCricketStats.forEach(s => {
-        const existing = playerMap.get(s.profile_id) || newPlayerStatAccumulator();
-        existing.runs += s.bat_runs || 0;
-        existing.balls += s.bat_balls || 0;
-        existing.wickets += s.bowl_wickets || 0;
-        playerMap.set(s.profile_id, existing);
-      });
-    } else {
-      function updateLocalPlayerStats(pid: string, e: MatchEventRow) {
-        const existing = playerMap.get(pid) || newPlayerStatAccumulator();
-
-        switch (e.event_type) {
-          case 'chip_off_score': {
-            const pts = ((e.event_data as ChipOffScoreEventData).points) || 0;
-            existing.points += pts;
-            if (pts === 10) existing.tens += 1;
-            break;
-          }
-          case 'darts_turn':
-          case 'darts_bust':
-          case 'darts_throw': {
-            const data = e.event_data as DartsScoreEventData;
-            existing.points += getDartsEventScore(data);
-            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(data);
-            if (e.event_type === 'darts_bust') existing.busts = (existing.busts || 0) + 1;
-            break;
-          }
-          case 'darts_win': {
-            const data = e.event_data as DartsWinEventData;
-            existing.wins += 1;
-            existing.points += getDartsEventScore(data);
-            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(data);
-            existing.checkouts = (existing.checkouts || 0) + (data.checkout ? 1 : 0);
-            existing.double_out_finishes = (existing.double_out_finishes || 0) + ((data.throw?.ring === 'double' || data.throw?.ring === 'double_bull') ? 1 : 0);
-            break;
-          }
-          case 'darts_atw_throw': {
-            const data = e.event_data as DartsAtwEventData;
-            existing.points += data.advanced_by || 0;
-            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(data);
-            existing.atw_attempts = (existing.atw_attempts || 0) + 1;
-            existing.atw_successful_hits = (existing.atw_successful_hits || 0) + (data.hit_target ? 1 : 0);
-            existing.atw_advances = (existing.atw_advances || 0) + (data.advanced_by || 0);
-            existing.atw_bull_finishes = (existing.atw_bull_finishes || 0) + ((data.winner_profile_id === pid) ? 1 : 0);
-            break;
-          }
-          case 'darts_killer_throw': {
-            const data = e.event_data as DartsKillerEventData;
-            existing.points += (data.eliminated_player_ids?.length || 0) * 10;
-            existing.darts_thrown = (existing.darts_thrown || 0) + getDartsEventThrowCount(data);
-            existing.killer_attempts = (existing.killer_attempts || 0) + 1;
-            existing.killer_activations = (existing.killer_activations || 0) + (data.activated ? 1 : 0);
-            existing.killer_opponent_lives_removed = (existing.killer_opponent_lives_removed || 0) + (data.hit_opponent_id ? 1 : 0);
-            existing.killer_self_penalties = (existing.killer_self_penalties || 0) + (data.self_penalty ? 1 : 0);
-            existing.killer_eliminations_secured = (existing.killer_eliminations_secured || 0) + (data.eliminated_player_ids?.filter((candidateId: string) => candidateId !== pid).length || 0);
-            existing.killer_times_eliminated = (existing.killer_times_eliminated || 0) + ((data.eliminated_player_ids || []).includes(pid) ? 1 : 0);
-            existing.killer_target_hit_attempts = (existing.killer_target_hit_attempts || 0) + (data.throw?.segment && data.throw?.segment !== 'miss' ? 1 : 0);
-            existing.killer_target_hit_successes = (existing.killer_target_hit_successes || 0) + ((data.activated || Boolean(data.hit_opponent_id) || data.self_penalty) ? 1 : 0);
-            break;
-          }
-          case 'tt_point':
-            existing.points += 1;
-            break;
-          case 'tt_set':
-            existing.sets += 1;
-            break;
-          case 'pool_frame':
-            existing.frames += 1;
-            break;
-          case 'bball_score':
-            existing.points += (e.event_data as BballScoreEventData).pts || 0;
-            break;
-          case 'cards_round': {
-            const roundScores = (e.event_data as CardsRoundEventData).round || {};
-            if (roundScores[pid] !== undefined) {
-              existing.points += roundScores[pid];
-            }
-            break;
-          }
-          case 'custom_score':
-            existing.points += (e.event_data as CustomScoreEventData).value || 0;
-            break;
-          case 'delivery': {
-            const data = e.event_data as DeliveryEventData;
-            existing.runs += data.runs || 0;
-            const extra = data.extra;
-            if (!extra || extra === 'bye' || extra === 'legbye') {
-              existing.balls += 1;
-            }
-            break;
-          }
-          case 'wicket': {
-            const dismissedBy = (e.event_data as WicketEventData).dismissedBy;
-            if (dismissedBy) {
-              const bowlerPid = dismissedBy;
-              const bStats = playerMap.get(bowlerPid) || newPlayerStatAccumulator();
-              bStats.wickets += 1;
-              playerMap.set(bowlerPid, bStats);
-            }
-            break;
-          }
-          case 'golf_score': {
-            const data = e.event_data as GolfScoreEventData;
-            existing.strokes += data.strokes || 0;
-            if (data.holeInOne) existing.hio += 1;
-            break;
-          }
-          case 'putt_attempt': {
-            const outcome = (e.event_data as PuttAttemptEventData).outcome;
-            existing.total_putt_attempts = (existing.total_putt_attempts || 0) + 1;
-            if (outcome === 'holed') {
-              existing.holed_putts_total = (existing.holed_putts_total || 0) + 1;
-            }
-            break;
-          }
-          case 'tiebreak_result':
-            existing.clutch_putts = (existing.clutch_putts || 0) + 1;
-            break;
-          case 'point':
-          case 'score':
-            existing.points += (e.event_data as PointEventData).amount || 1;
-            break;
-        }
-        playerMap.set(pid, existing);
-      }
-
-      matchEvents.forEach(e => {
-        let pid = e.player_id;
-        const routingData = e.event_data as PlayerTeamRoutingEventData;
-        if (!pid && routingData?.player !== undefined) {
-          pid = matchPlayers[routingData.player]?.profile_id;
-        }
-        if (!pid && e.team_id) {
-          matchPlayers.filter(p => p.team_id === e.team_id).forEach(tp => updateLocalPlayerStats(tp.profile_id, e));
-          return;
-        }
-        if (pid) updateLocalPlayerStats(pid, e);
-      });
-    }
-
     // 3.1 Aggregate this match's stats
     const matchStatsList: MatchStatsListEntry[] = [];
-    matchPlayers.forEach(p => {
-      const s = playerMap.get(p.profile_id) || newPlayerStatAccumulator();
-
-      const isWinner = match.winner_profile_id === p.profile_id || (!!p.team_id && match.winner_team_id === p.team_id);
+    matchScores.forEach(s => {
+      const isWinner = match.winner_profile_id === s.profile_id || (!!s.team_id && match.winner_team_id === s.team_id);
       let score = s.points;
       if (match.sport === 'cricket') score = s.runs;
       if (match.sport === 'golf') {
         if (isChipOff) {
           // Team chip-off: every teammate is credited with the team's combined
           // total for ranking/placement/lifetime points, same as how a team
-          // win/loss is already shared - individual milestone stats (tens,
-          // chips) stay untouched below, sourced from the per-player accumulator.
-          if (isChipOffTeamPlay && p.team_id) {
-            const teammateIds = matchPlayers.filter(mp => mp.team_id === p.team_id).map(mp => mp.profile_id);
-            score = teammateIds.reduce((sum, pid) => sum + (playerMap.get(pid)?.points || 0), 0);
+          // win/loss is already shared - individual milestone stats (tens)
+          // stay untouched below, sourced from that player's own row.
+          if (isChipOffTeamPlay && s.team_id) {
+            score = matchScores
+              .filter(mate => mate.team_id === s.team_id)
+              .reduce((sum, mate) => sum + mate.points, 0);
           } else {
             score = s.points;
           }
         } else if (isPuttVsPutt) {
-          score = s.holed_putts_total || 0;
+          score = s.holed_putts_total;
         } else {
           score = s.strokes;
         }
       }
 
       matchStatsList.push({
-        profile_id: p.profile_id,
-        team_id: p.team_id ?? null,
+        profile_id: s.profile_id,
+        team_id: s.team_id ?? null,
         score,
         is_winner: isWinner,
         extra: s
@@ -599,9 +375,9 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
       let milestoneSP = 0;
       if (match.sport === 'cricket') {
         if (ms.score >= 50) milestoneSP += SEASON_POINT_RULES.milestones.cricket[0].points;
-        if ((ms.extra.wickets || 0) >= 3) milestoneSP += SEASON_POINT_RULES.milestones.cricket[1].points;
+        if (ms.extra.wickets >= 3) milestoneSP += SEASON_POINT_RULES.milestones.cricket[1].points;
       } else if (match.sport === 'golf' && !isPuttVsPutt) {
-        const totalAces = (ms.extra.hio || 0) + (ms.extra.tens || 0);
+        const totalAces = ms.extra.hio + ms.extra.tens;
         milestoneSP += totalAces * SEASON_POINT_RULES.milestones.golf[0].points;
       }
 
@@ -614,17 +390,15 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
       // Lifetime counters
       if (match.sport === 'cricket') {
         g.cricket_lifetime_runs += ms.score;
-        g.cricket_lifetime_wickets += (ms.extra.wickets || 0);
+        g.cricket_lifetime_wickets += ms.extra.wickets;
       } else if (match.sport === 'golf') {
         if (isChipOff) {
           g.golf_lifetime_points += ms.score;
-          g.golf_lifetime_hio += (ms.extra.tens || 0);
-          g.chip_off_total_chips += (ms.extra.total_chips || 0);
-          g.chip_off_scoring_chips += (ms.extra.scoring_chips || 0);
+          g.golf_lifetime_hio += ms.extra.tens;
         } else if (isPuttVsPutt) {
-          g.pvp_career_holes += (ms.extra.holed_putts_total || 0);
+          g.pvp_career_holes += ms.extra.holed_putts_total;
         } else {
-          g.golf_lifetime_hio += (ms.extra.hio || 0);
+          g.golf_lifetime_hio += ms.extra.hio;
         }
       }
       
@@ -655,17 +429,6 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
           }
         }
       }
-
-      // Merge extra stats
-      const msExtra = ms.extra as unknown as Record<string, number>;
-      const gExtra = g.extra_stats as unknown as Record<string, number>;
-      Object.keys(msExtra).forEach(key => {
-        if (typeof msExtra[key] === 'number') {
-          gExtra[key] = (gExtra[key] || 0) + msExtra[key];
-        } else {
-          gExtra[key] = msExtra[key];
-        }
-      });
     });
   }
 
