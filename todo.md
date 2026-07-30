@@ -55,8 +55,9 @@ separate availability limit that no code change fixes.
 None of this replaces Pro ($25/mo, 250 GB egress, no auto-pause) once the
 user base is real — it buys headroom so that upgrade is a choice made from
 comfortable footing, not a fix for something already breaking. **What's left
-before 100 users is the P1 list below** — in particular the live
-`rpc_login` account-takeover hole, which needs zero user growth to matter.
+before 100 users is the P1 list below.** The `rpc_login` account-takeover
+hole — the item that needed zero user growth to matter — is fixed as of
+2026-07-30; see its entry below for what's still open (7 stranded profiles).
 
 ## P0 — blocks 100 users
 
@@ -159,13 +160,27 @@ before 100 users is the P1 list below** — in particular the live
   `recordEvent()` call. Note that fixing it will retroactively change season
   points for any existing match of those sports.
 
-- **`rpc_login` lets anyone claim an unclaimed account with any PIN.** If a
-  profile has `pin_hash IS NULL AND is_guest = false`, the function accepts
-  any PIN and *sets* it as that account's PIN. There are **7 such profiles
-  live right now**. Because the `profiles` SELECT policy is `USING (true)`,
-  usernames are publicly listable with the anon key, so the targets are
-  enumerable. Fix: drop the null-`pin_hash` fallback branch and give those 7
-  profiles a real claim flow (or mark them guests).
+- ~~**`rpc_login` lets anyone claim an unclaimed account with any PIN.**~~
+  **Done 2026-07-30** (`20260730204939_fix_rpc_login_account_takeover.sql`).
+  The null-`pin_hash` fallback branch — which accepted any PIN for a profile
+  with `pin_hash IS NULL AND is_guest = false` and set it as that account's
+  PIN — is removed; login now only succeeds against a real `pin_hash`
+  match. Verified against live in a rolled-back transaction: guessing a PIN
+  for one of the 7 affected usernames now returns no rows and leaves
+  `pin_hash` still null (previously it would have silently claimed the
+  account); a real login (`claudetester`/`1234`) still succeeds unchanged.
+
+  **Still open: the 7 profiles this fix stranded.** They were never
+  malicious data — real usernames (some are email addresses), pre-created
+  with no PIN so the real owner could set one on first login. That's now
+  impossible: nobody can log into them at all until they're either given a
+  real claim flow (needs some out-of-band-verified mechanism, since this
+  app has no email/SMS) or manually resolved by an admin (e.g. an
+  admin-only "set this profile's PIN" action, communicated to the friend
+  out of band). Deliberately not decided or touched by this fix — it's a
+  product/data decision, not a security one. Affected usernames: `mrchanman`,
+  `primeserpentz`, `dnagle9801@gmail.com`, `bandy1703@hotmail.com`,
+  `worko06`, `chole`, `andrewjones98`.
 - **No rate limiting on `rpc_login`.** 4-digit PIN, static salt
   (`scorekeeper:${pin}:salt2024`), single SHA-256 round — 10,000 candidates
   is seconds of parallel requests. Fix: attempt counter keyed on
