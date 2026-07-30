@@ -23,20 +23,7 @@ rather than letting it accumulate in CLAUDE.md.
 
 ## Tech debt
 
-- **Audit other tables for the same DELETE-has-admin-override,
-  UPDATE-doesn't gap fixed on `match_rooms` (2026-07-30, see CLAUDE.md).**
-  Only `match_rooms` was checked and fixed; `match_players`, `match_teams`,
-  `cricket_innings`, `golf_holes`, etc. were never checked for whether their
-  write policies actually grant `is_admin_session()` where the client-side
-  `ctx.isAdmin` checks assume they do.
-- **Write helpers don't detect an RLS-blocked no-op.** `updateMatchStatus()`
-  and friends in `lib/matches.ts` only check `error`, but a PostgREST UPDATE
-  filtered to 0 rows by RLS returns `204` with no error — indistinguishable
-  from a real success. This is exactly how the `match_rooms` admin-override
-  gap above went unnoticed: an admin's End & Lock click looked successful
-  while doing nothing. Worth having these helpers check affected row count
-  (or `.select()` + verify a row came back) and throw if nothing changed,
-  rather than relying on every RLS policy being audited perfectly.
+_None open right now — add here as it's found._
 
 ## Bug fixes
 

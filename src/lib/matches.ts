@@ -37,6 +37,19 @@ export function generateRoomCode(): string {
   return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join('').toUpperCase();
 }
 
+// PostgREST returns 204 with no error for an UPDATE that RLS silently
+// filtered down to 0 rows - indistinguishable from a real success unless
+// the caller asks for the affected row back and checks it actually came
+// back. This is exactly how the match_rooms admin-override RLS gap went
+// unnoticed (see CLAUDE.md's Database and migrations section): an admin's
+// End & Lock click looked successful while doing nothing.
+function assertRowAffected<T>(matchId: string, action: string, error: { message: string } | null, row: T | null): void {
+  if (error) throw error;
+  if (!row) {
+    throw new Error(`${action} affected no rows for match ${matchId} - likely blocked by an RLS policy`);
+  }
+}
+
 export async function getMatchByCode(code: string): Promise<MatchRoom | null> {
   const { data, error } = await supabase
     .from('match_rooms')
@@ -82,12 +95,14 @@ export async function getMatchPlayers(matchId: string): Promise<MatchPlayer[]> {
 }
 
 export async function updateMatchStatus(matchId: string, status: string): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('match_rooms')
     .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', matchId);
-  
-  if (error) throw error;
+    .eq('id', matchId)
+    .select('id')
+    .maybeSingle();
+
+  assertRowAffected(matchId, 'updateMatchStatus', error, data);
 
   // Some sports (classic golf; any match ended early via this generic path)
   // never got an explicit winner from their room's own scoring UI - backfill
@@ -103,7 +118,7 @@ export async function updateMatchStatus(matchId: string, status: string): Promis
 }
 
 export async function completeMatchWithWinner(matchId: string, winnerProfileId: string): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('match_rooms')
     .update({
       winner_profile_id: winnerProfileId,
@@ -111,13 +126,15 @@ export async function completeMatchWithWinner(matchId: string, winnerProfileId: 
       status: 'completed',
       updated_at: new Date().toISOString(),
     })
-    .eq('id', matchId);
+    .eq('id', matchId)
+    .select('id')
+    .maybeSingle();
 
-  if (error) throw error;
+  assertRowAffected(matchId, 'completeMatchWithWinner', error, data);
 }
 
 export async function completeMatchWithTeamWinner(matchId: string, winnerTeamId: string): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('match_rooms')
     .update({
       winner_team_id: winnerTeamId,
@@ -125,9 +142,11 @@ export async function completeMatchWithTeamWinner(matchId: string, winnerTeamId:
       status: 'completed',
       updated_at: new Date().toISOString(),
     })
-    .eq('id', matchId);
+    .eq('id', matchId)
+    .select('id')
+    .maybeSingle();
 
-  if (error) throw error;
+  assertRowAffected(matchId, 'completeMatchWithTeamWinner', error, data);
 }
 
 export async function getRecentMatches(limit = 10): Promise<MatchRoom[]> {
@@ -321,12 +340,14 @@ export async function undoLastEvent(matchId: string): Promise<void> {
   if (fetchError) throw fetchError;
   if (!lastEvent) return;
 
-  const { error: updateError } = await supabase
+  const { data, error: updateError } = await supabase
     .from('match_events')
     .update({ is_undone: true })
-    .eq('id', lastEvent.id);
+    .eq('id', lastEvent.id)
+    .select('id')
+    .maybeSingle();
 
-  if (updateError) throw updateError;
+  assertRowAffected(matchId, 'undoLastEvent', updateError, data);
 }
 
 export function getSpectatorUrl(roomCode: string): string {
