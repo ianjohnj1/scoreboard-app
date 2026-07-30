@@ -9,7 +9,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import QRCodeModal from '../components/QRCodeModal';
 import Modal from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
-import { getRecentMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel, isMatchStale, type LiveActivityEntry } from '../lib/matches';
+import { getCompletedMatches, getActiveMatches, getLiveActivity, deleteMatch, getSportIcon, getSportLabel, isMatchStale, getMatchDisplayStatus, type LiveActivityEntry } from '../lib/matches';
 import { getUpcomingEvents, getEventRsvps } from '../lib/events';
 import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
 import type { Event, Profile, MatchRoom } from '../lib/supabase';
@@ -91,17 +91,20 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [recent, active, live] = await Promise.all([
-        getRecentMatches(5),
+      const [completed, active, live] = await Promise.all([
+        getCompletedMatches(5),
         getActiveMatches(),
         getLiveActivity()
       ]);
 
       if (isMounted && !isMounted()) return;
 
-      setRecentMatches((recent || []).filter(Boolean));
-      setActiveMatches((active || []).filter(match => match && !isMatchStale(match)));
-      setLiveActivity((live || []).filter(Boolean));
+      setRecentMatches((completed || []).filter(Boolean));
+      // Live Activity already covers the "live and playing" ones - only
+      // surface the rest (paused, or active-but-stale) here so a match
+      // never appears in both sections.
+      setActiveMatches((active || []).filter(match => match && getMatchDisplayStatus(match) !== 'live'));
+      setLiveActivity((live || []).filter(entry => entry?.match && !isMatchStale(entry.match)));
     } catch (err: unknown) {
       console.error("Error loading dashboard data:", err);
       if (isMounted && !isMounted()) return;
@@ -422,7 +425,6 @@ export default function Dashboard() {
                     onDelete={() => setConfirmDeleteId(match.id)}
                     canDelete={isAdmin}
                     isDeleting={deletingId === match.id}
-                    hideLiveBadge
                   />
                 );
               })}
@@ -488,10 +490,9 @@ export default function Dashboard() {
 }
 
 function MatchCard({
-  match, onQR, onDelete, canDelete, isDeleting, hideLiveBadge
+  match, onQR, onDelete, canDelete, isDeleting
 }: {
   match: MatchRoom | null | undefined; onQR: () => void; onDelete: () => void; canDelete: boolean; isDeleting: boolean;
-  hideLiveBadge?: boolean;
 }) {
   const navigate = useNavigate();
   if (!match) return null;
@@ -500,7 +501,7 @@ function MatchCard({
   const variant = typeof match.house_rules?.variant === 'string' ? match.house_rules.variant : undefined;
   const customGameName = typeof match.custom_game_name === 'string' ? match.custom_game_name : null;
   const roomCode = typeof match.room_code === 'string' && match.room_code.trim() ? match.room_code : null;
-  const isLive = match.status === 'active';
+  const displayStatus = getMatchDisplayStatus(match);
   const sportLabel = getSportLabel(sport, customGameName, variant);
   const sportIcon = getSportIcon(sport);
   const matchDate =
@@ -525,11 +526,13 @@ function MatchCard({
           <span className="font-semibold text-charcoal-100 text-sm truncate">
             {sportLabel}
           </span>
-          {!(hideLiveBadge && isLive) && (
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isLive ? 'bg-emerald-950 text-emerald-400' : 'bg-charcoal-700 text-charcoal-400'}`}>
-              {isLive ? 'Live' : 'Done'}
-            </span>
-          )}
+          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+            displayStatus === 'live' ? 'bg-emerald-950 text-emerald-400' :
+            displayStatus === 'paused' ? 'bg-amber-950 text-amber-400' :
+            'bg-charcoal-700 text-charcoal-400'
+          }`}>
+            {displayStatus === 'live' ? 'Live' : displayStatus === 'paused' ? 'Paused' : 'Done'}
+          </span>
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-charcoal-500 text-xs font-mono">{roomCode || '....'}</span>
@@ -544,7 +547,7 @@ function MatchCard({
           </div>
         ) : (
           <>
-            {isLive && (
+            {displayStatus !== 'done' && (
               <button
                 onClick={(e) => { e.stopPropagation(); onQR(); }}
                 className="p-2 rounded-lg hover:bg-charcoal-700 text-charcoal-400 transition-colors"

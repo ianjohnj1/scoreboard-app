@@ -15,6 +15,17 @@ export function isMatchStale(match: Pick<MatchRoom, 'status' | 'updated_at' | 'c
   return Date.now() - referenceTime > STALE_MATCH_THRESHOLD_MS;
 }
 
+export type MatchDisplayStatus = 'live' | 'paused' | 'done';
+
+// A match that's still DB-status 'active' but hasn't been touched in a while
+// reads to a viewer exactly like a paused one - nobody's actually playing it -
+// so it should badge the same way rather than claim to still be live.
+export function getMatchDisplayStatus(match: Pick<MatchRoom, 'status' | 'updated_at' | 'created_at'>): MatchDisplayStatus {
+  if (match.status === 'paused') return 'paused';
+  if (match.status === 'active') return isMatchStale(match) ? 'paused' : 'live';
+  return 'done';
+}
+
 // 8 hex chars from a UUID's first segment - far larger a keyspace than the
 // 5-char base36 Math.random() codes this replaced, and not subject to
 // Math.random()'s weaker (non-cryptographic) randomness.
@@ -125,18 +136,37 @@ export async function getRecentMatches(limit = 10): Promise<MatchRoom[]> {
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit);
-  
+
   if (error) throw error;
   return data || [];
 }
 
+// Completed (ended-and-locked) matches only - the dashboard's "Recent
+// Matches" history feed. Ordered by updated_at since that's when a match
+// actually finished, not when it was first created.
+export async function getCompletedMatches(limit = 10): Promise<MatchRoom[]> {
+  const { data, error } = await supabase
+    .from('match_rooms')
+    .select('*')
+    .eq('status', 'completed')
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+// Matches that haven't been completed/locked yet - covers both 'active' and
+// explicitly 'paused' status, so this is the full incomplete-match pool the
+// dashboard splits between "Live Activity" (still playing) and "Active
+// Matches" (paused, or active but stale).
 export async function getActiveMatches(): Promise<MatchRoom[]> {
   const { data, error } = await supabase
     .from('match_rooms')
     .select('*')
-    .eq('status', 'active')
+    .in('status', ['active', 'paused'])
     .order('created_at', { ascending: false });
-  
+
   if (error) throw error;
   return data || [];
 }
