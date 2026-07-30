@@ -23,18 +23,6 @@ rather than letting it accumulate in CLAUDE.md.
 
 ## Tech debt
 
-- **Decide the fate of `player_career_stats`.** As of 2026-07-30
-  (`ddcf0cc`) the client no longer writes to it and nothing reads it — the
-  leaderboard is fully live-computed by `getGlobalLeaderboardData()` in
-  `src/lib/stats.ts`. The table has no INSERT/UPDATE RLS policy by design.
-  Either formally revive it as a real server-computed cache (materialized
-  view / cron job) or drop it via a migration — leaving it inert invites a
-  future "why does this table have no write policy?" audit finding.
-- **`STATS_AUDIT_LOG.md` is stale.** It still documents darts (`extra_stats`)
-  and Chip Off metrics as being persisted to `player_career_stats`, which
-  hasn't been true since the client-write revocation above. Needs a rewrite
-  to describe the actual live/`stats.ts`-computed pipeline before anyone
-  trusts it as the source of truth for a metric's storage path.
 - **Audit other tables for the same DELETE-has-admin-override,
   UPDATE-doesn't gap fixed on `match_rooms` (2026-07-30, see CLAUDE.md).**
   Only `match_rooms` was checked and fixed; `match_players`, `match_teams`,

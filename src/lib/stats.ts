@@ -167,9 +167,9 @@ interface MatchStatsListEntry {
 // classic golf has no win-condition button at all, and any match can be ended
 // early via the generic "End & Lock" header action before its room's own win
 // condition fires. This backfills winner_profile_id from raw scores when it's
-// still missing at completion time. It deliberately does NOT touch
-// player_career_stats - that table is no longer written from the client (see
-// docs/rls-ground-rules.md and CLAUDE.md's Known gaps history).
+// still missing at completion time. There's no career-stats cache to touch
+// any more - player_career_stats was dropped 2026-07-30 (dead table, see
+// supabase/migrations/20260730030956_drop_dead_player_career_stats_table.sql).
 export async function determineAndSaveWinnerIfMissing(matchId: string): Promise<void> {
   const { data: match, error: matchError } = await supabase
     .from('match_rooms')
