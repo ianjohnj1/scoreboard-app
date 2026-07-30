@@ -60,18 +60,34 @@ substituting for these fixes.
   mid-range phone runs roughly 4–8x slower). The compute wall is now well past
   10,000 matches — **payload/egress (next item) is the binding constraint from
   here.**
-- **The leaderboard pulls the entire database on every load.** Same function
-  fetches *all* completed `match_rooms` + *all* `match_players` + *all*
-  non-undone `match_events` + *all* `profiles` + *all* `cricket_player_stats`,
-  unbounded and unpaginated, then re-derives everything in memory. There is no
-  PostgREST `max_rows` cap on this project (verified: `Content-Range:
-  0-977/978`), so it stays correct and just grows forever. Fix: move the
-  aggregation into Postgres as a view or a materialised view refreshed on
-  match completion. This is the single change that lifts both the egress and
-  the compute ceiling by roughly an order of magnitude. Note `SEASON_POINT_RULES`
-  is currently exported from `stats.ts` so the Leaderboard explainer modal can
-  render live values — a SQL implementation needs to keep those two in sync
-  (or derive the modal's copy from the DB too), not fork the numbers.
+- ~~**The leaderboard pulls the entire database on every load.**~~ **Done
+  2026-07-30**, scoped to pushing the per-event reduction down (see the
+  scoping note below). The `leaderboard_match_player_scores` view
+  (`20260730143009`, refactored for testability by `20260730143429`) reduces
+  `match_events` server-side to one row per (match, roster player);
+  `getGlobalLeaderboardData()` no longer fetches `match_events`,
+  `match_players`, or `cricket_player_stats` at all, and `match_rooms` is
+  down to five columns from `select('*')`. Measured on live data: **34,376 →
+  2,248 bytes gzipped per load, and 16,452 → 388 bytes per match (42x)** on
+  the part that grows with history. At 1,000 cumulative matches that turns
+  the free plan's 5 GB from ~740 leaderboard loads into ~13,000.
+
+  Verified two ways, because live data covers only 3 of 14 event types: a
+  differential against a faithful reimplementation of the old TypeScript
+  reduction over live rows (105 field comparisons, 0 mismatches, no missing
+  or extra rows), and 39 synthetic per-branch cases through
+  `match_event_points()` covering **all fourteen** event types including the
+  eleven with no data (0 mismatches). Rendered leaderboard values are
+  unchanged from a pre-change snapshot.
+
+  Placement, season points, milestones, lifetime counters and best scores
+  were deliberately **not** ported and still live in `stats.ts`. That keeps
+  `SEASON_POINT_RULES` the single source of truth for the maths and the
+  explainer modal both, so the constant-vs-hardcoded-SQL drift risk noted
+  during the audit never materialised. Aggregating those in SQL too would
+  cut payload perhaps another 5-10x (one row per player per sport rather
+  than per match) — worth revisiting only if egress becomes binding again,
+  and only behind a test suite.
 - **Every sport-tab switch re-runs the whole pull.** `loadLeaderboard` in
   `src/pages/LeaderboardPage.tsx` depends on `sport`, so browsing the nine
   tabs is nine full fetches. The `leaderboard-live` channel also triggers a
@@ -87,6 +103,22 @@ substituting for these fixes.
   whole insert into an RPC). Also removes a round trip per scored event.
 
 ## P1 — needed at or before 100 users
+
+- **Three sports never score at all, because their events can't be routed.**
+  Found while porting the reduction to SQL (2026-07-30). The leaderboard
+  credits an event to a player via `player_id`, else an `event_data.player`
+  roster index, else `team_id` — and an event with none of the three is
+  silently dropped. `cards_round` (`CardsRoom.tsx:41`) passes no player, no
+  index and no team; `tt_set` (`TableTennisRoom.tsx:71`) sends `winner`, not
+  `player`; non-team `custom_score` (`CustomRoom.tsx:42`) puts the profile id
+  in `event_data.entityId` where nothing reads it. So cards scores, table
+  tennis set wins, and solo custom-game scores contribute nothing to season
+  points. `pool_frame` routes fine but only increments a counter the
+  leaderboard never reads, so pool players also always score 0. The SQL view
+  reproduces all of this deliberately rather than changing behaviour mid-
+  refactor. Fix is in the rooms, not the view: pass `player_id` on the
+  `recordEvent()` call. Note that fixing it will retroactively change season
+  points for any existing match of those sports.
 
 - **`rpc_login` lets anyone claim an unclaimed account with any PIN.** If a
   profile has `pin_hash IS NULL AND is_guest = false`, the function accepts
