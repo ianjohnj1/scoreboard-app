@@ -72,15 +72,28 @@ sport-tab refetching, `sequence_num` write race) — full write-up in
   completeness (explicit win conditions, proper stat tracking) would
   resolve this and likely several of the routing quirks above as a
   byproduct, rather than patching each symptom separately.
-- **`DartsRoom` and `CustomRoom` never rehydrate from `match_events`.**
-  CLAUDE.md requires every sport without normalised side tables to do this,
-  and TableTennis/Pool/Basketball/Cards all do — Darts and Custom only ever
-  *write* (`recordEvent` at `DartsRoom.tsx:182`), with state coming from
-  `buildInitialState(...)`. Refreshing mid-501 resets the score to the
-  start. Neither room has a realtime subscription either, so a second
-  device never syncs. Darts is the most stateful sport in the app, so this
-  is the worst room to have it in. Confirmed bug, not a scaling issue — but
-  at 100 users it stops being rare.
+- **`DartsRoom` and `CustomRoom` never rehydrate from `match_events`, and
+  none of the six non-side-table rooms sync live across devices.**
+  CLAUDE.md requires every sport without normalised side tables to
+  rehydrate from `match_events`, and TableTennis/Pool/Basketball/Cards all
+  do on mount — Darts and Custom only ever *write* (`recordEvent` at
+  `DartsRoom.tsx:182`), with state coming from `buildInitialState(...)`.
+  Refreshing mid-501 resets the score to the start. Darts is the most
+  stateful sport in the app, so this is the worst room to have it in.
+  Confirmed bug, not a scaling issue — but at 100 users it stops being rare.
+  **Re-checked 2026-08-01 while building the delta-sync hook mentioned
+  next: it's worse than previously scoped** — TableTennis, Pool,
+  Basketball, and Cards rehydrate on mount but have no realtime
+  subscription at all (no `.channel(` in any of the four files), so a
+  second device never sees a live score update for any of these six
+  sports, not just Darts/Custom.
+  Fix mechanism now exists and doesn't need to be built per-room:
+  `useMatchEvents()` (`src/hooks/useMatchEvents.ts`, added 2026-08-01, see
+  `docs/fix-history.md`) already solves rehydration + live cross-device
+  sync + reconnect safety in one hook, proven out in `ChipOffRoom`/
+  `PvPRoom`. Wiring these six rooms onto it (as part of bringing them up to
+  Golf/Cricket's completeness generally, see the item above) closes this
+  without reinventing the fetch/subscribe logic per room.
 - **Unfiltered global realtime subscriptions.** `fanboy-live` in
   `LeaderboardPage.tsx` listens to *every* comment INSERT app-wide; the
   leaderboard and `ProfilePage` both listen to every completed match. Fan-out

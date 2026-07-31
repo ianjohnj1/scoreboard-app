@@ -280,6 +280,49 @@ actual app in the browser preview afterward: dashboard, match list, and
 leaderboard all loaded normally, confirming RLS reads through these
 helpers still resolve correctly.
 
+### Match-room event fetch was O(full history) per realtime signal (2026-08-01)
+
+`ChipOffRoom.tsx` and `PvPRoom.tsx` replay the entire `match_events`
+history (up to 453 rows/match, see the P0 baseline above) to derive game
+state, and both re-ran that full fetch on every realtime signal — mount,
+every score, every undo — on every connected device. `MatchRoomPage.tsx`/
+`SpectatorPage.tsx` also re-fetched the full roster's `profiles` row set on
+every refresh, even though `display_name`/`avatar_url`/`avatar_color`
+rarely change mid-session.
+
+Fix: `useMatchEvents()` (`src/hooks/useMatchEvents.ts`) delta-syncs
+instead of replaying — it tracks a `sequence_num` cursor and only fetches
+events past it, with a point-lookup (`select is_undone where id =
+<cached tail event>`) to detect the one row `undoLastEvent()` can ever
+mutate. That correctness argument depends on `undoLastEvent()` only ever
+flipping `is_undone` on the current last live event, never an arbitrary
+older one — true today (`lib/matches.ts`), called out in the hook's
+comments so it gets revisited if that changes. A full resync still runs on
+mount and whenever the realtime channel reconnects (via the `SUBSCRIBED`
+status callback), so a signal missed while a device was disconnected can't
+leave the cache silently wrong — that reconnect safety net didn't exist in
+the old full-refetch code either, so this is a correctness improvement as
+well as a performance one. `profileCache.ts` adds a session-lifetime `Map`
+cache for profiles, seeded/invalidated by `ProfilePage` on self-edits so a
+device's own profile changes are reflected immediately rather than waiting
+on a TTL.
+
+`ChipOffRoom`/`PvPRoom` now use the hook. `CricketRoom` was left alone —
+its live state comes from `cricket_innings`/`cricket_player_stats` side
+tables, not event replay, and its own `match_events` fetch is already
+capped at 12 rows for a ticker display. While scoping this, also found
+that `DartsRoom`/`CustomRoom`/`TableTennisRoom`/`PoolRoom`/
+`BasketballRoom`/`CardsRoom` have no realtime subscription at all (not
+just Darts/Custom as previously scoped) — logged as an update to the
+existing `todo.md` item rather than fixed here, since wiring those six
+rooms up is bundled with bringing them to Golf/Cricket's general level of
+completeness.
+
+Verified live in the browser: scored and undid shots in one tab while
+spectating the same match in a second tab, confirming both the insert and
+undo paths propagate correctly cross-device with no console errors;
+`typecheck`/`lint`/`test` all clean throughout.
+
 ### Duplicate `match_rooms` room-code index (2026-08-01)
 
 `todo.md`'s P2 index-bloat item claimed 20 project-wide unused indexes,

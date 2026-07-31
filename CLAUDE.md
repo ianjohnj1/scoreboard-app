@@ -72,6 +72,8 @@ Identity is a `profiles` row plus a 4-digit PIN. There are no Supabase JWTs.
 
 Only cricket (`cricket_innings`, `cricket_player_stats`) and golf (`golf_holes`, `golf_scores`) have normalized side tables. **Every other sport's score exists only in `match_events`**, so those rooms must rehydrate their local state from `match_events` on mount or a refresh mid-match shows 0–0.
 
+`useMatchEvents(matchId)` (`src/hooks/useMatchEvents.ts`) is the shared way to read a match's live event log without replaying full history on every refresh — it delta-syncs via a `sequence_num` cursor instead of re-fetching everything on each realtime signal. `ChipOffRoom` and `PvPRoom` use it. `CricketRoom` doesn't: its live state comes from `cricket_innings`/`cricket_player_stats`, and its own `match_events` fetch is a 12-row ticker, not a full replay. `DartsRoom`, `CustomRoom`, `TableTennisRoom`, `PoolRoom`, `BasketballRoom`, and `CardsRoom` don't use it yet — see `todo.md`.
+
 `deleteMatch()` clears dependents explicitly in a fixed order — there's no DB cascade, and `comments` is polymorphic (`context_type`/`context_id`) so it has no FK at all.
 
 ### Sport rooms
@@ -108,6 +110,8 @@ If a room memoizes a function that both reads and sets its own `loading` state (
 - `LineupOrderBuilder` (turn order at setup) and `TieBreakerChallenge` (PvP tie-breaks; raw distance measurements are ephemeral UI state and deliberately never persisted).
 - `Modal`, plus the `.modal-*` classes, for every dialog.
 - `generateRoomCode()` in `lib/matches.ts` (8 hex chars from a UUID's first segment) for every new `match_rooms.room_code` — initial creation (`NewMatchPage`) and every room's rematch flow (`CricketRoom`, `DartsRoom`, `ChipOffRoom`) share it. Don't reintroduce a local `Math.random()`-based code.
+- `useMatchEvents(matchId)` (`src/hooks/useMatchEvents.ts`) for reading a match's live `match_events` log — see Matches are event-sourced and Realtime above. Don't write a new per-room `loadEvents` + `postgres_changes` subscription from scratch.
+- `getProfilesByIds()` in `src/lib/profileCache.ts` for looking up a roster's profiles — session-lifetime cache, avoids re-fetching the same players on every match-room refresh. If you mutate a profile (e.g. a settings/avatar save), call `setProfile()`/`invalidateProfile()` from the same module so the editor's own next read isn't stale.
 
 Names that look plausible but do not exist — don't code against them: there is no standalone `teams` table (use `match_teams` + `match_players.team_id`), no `ledger_entries` table (use `match_events` via `recordEvent()`), no `PlayerAvatar` component, and no separate `sport` enum value for Chip Off or Putt vs Putt. PvP turn order is `match_players.lineup_order` — not a `match_teams` array, and not cricket's `batting_order`.
 
@@ -130,6 +134,8 @@ Derived per-player analytics (strike rate, checkout %, scoring efficiency, …) 
 Rooms and list pages subscribe with `supabase.channel(...).on('postgres_changes', { table, filter: 'match_id=eq.<id>' }, …)` and the handler just refetches — payloads are used as a change signal, not as data. A table must be in the realtime publication to fire (`supabase/migrations/20260724_enable_realtime.sql`). Always `supabase.removeChannel(channel)` on cleanup.
 
 These subscription effects (in `MatchRoomPage.tsx`, `SpectatorPage.tsx`) deliberately depend on `match?.id`/`match?.status`, not the whole `match` object — `match` is a fresh object reference on every refetch, so depending on it directly would tear down and resubscribe the channel (or, for the `active_sessions` writer effect, redundantly clear-then-rewrite `match_id`) far more often than needed. ESLint's `exhaustive-deps` flags this as a missing dependency; the fix is an inline disable comment, not adding `match` to the array.
+
+`useMatchEvents()` (above) still follows "payload as signal, not data" — it queries for what changed on a signal, it doesn't read the payload itself — but adds a resync on the channel's `SUBSCRIBED` status callback (fires on first connect and on reconnect), so a signal missed while a device was disconnected can't leave its delta-synced cache silently stale. The other ad-hoc per-room channels don't have this reconnect safety net.
 
 ### Theme and styling
 
