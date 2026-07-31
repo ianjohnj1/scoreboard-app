@@ -259,6 +259,86 @@ auto-pause) once the user base is real — it bought headroom so that
 upgrade is a choice made from comfortable footing, not a fix for something
 already breaking.
 
+## Performance & scaling — P1 (2026-08-01)
+
+**Session-identity RLS helpers were `VOLATILE`.**
+`get_current_session_profile_id()`, `is_admin_session()`, and
+`is_match_participant()` were all declared `VOLATILE` (default), forcing
+Postgres to re-evaluate them per row instead of once per query, unlike
+their siblings `can_score_match()`/`is_match_host()` which were already
+`STABLE`. Harmless today only because every SELECT policy is `USING
+(true)` and writes are single-row — becomes an N-lookup scan the day a
+read policy gets scoped (see the P2 "every SELECT policy is `USING
+(true)`" item in `todo.md`).
+
+Fix (`20260731210400_mark_session_identity_helpers_stable.sql`): three
+`ALTER FUNCTION ... STABLE` statements, no body changes — all three only
+read session/profile/match state derived from the per-request
+`x-session-id` header, nothing they read changes mid-statement. Verified
+live (`provolatile` flipped `v` → `s` for all three) and by driving the
+actual app in the browser preview afterward: dashboard, match list, and
+leaderboard all loaded normally, confirming RLS reads through these
+helpers still resolve correctly.
+
+### Duplicate `match_rooms` room-code index (2026-08-01)
+
+`todo.md`'s P2 index-bloat item claimed 20 project-wide unused indexes,
+found via a 2026-07-30 architecture audit. Checked each of the 29
+`idx_scan = 0` indexes individually against `pg_stat_user_indexes` rather
+than dropping on the raw count: `match_events`'s own seven indexes are all
+genuinely used; 17 others are FK-support indexes deliberately added by
+`20260726044100_perf_hardening_fk_indexes_and_rls.sql` specifically to
+"cover every foreign key with an index" while the tables were still
+small — 0 scans there reflects table size and how FK-constraint checks
+are counted, not uselessness, so dropping them now would undo that
+intentional scaling prep. Only one, `idx_match_rooms_room_code`
+(`20260731211556_drop_duplicate_match_rooms_room_code_index.sql`), was a
+genuine duplicate of `match_rooms_room_code_key`'s own backing index on
+the same column — dropped. Verified live: the duplicate index is gone,
+the unique-constraint index remains and still covers every room-code
+lookup.
+
+Also surfaced, not acted on: `profiles.user_id` (FK to `auth.users`,
+100% NULL, unreferenced anywhere in the app) is dead weight from before
+the app moved to custom PIN auth — left as a separate `todo.md` item
+since dropping the column is a schema decision, not an index cleanup.
+
+### `pool_frame` scored 0 for every pool player (2026-08-01)
+
+`todo.md`'s P1 routing item lumped `pool_frame` in with `cards_round`/
+`tt_set`/`custom_score`, but it's a different bug: `pool_frame` events
+already route correctly (`PoolRoom.tsx`'s `recordEvent()` call passes the
+winning team's `team_id`), but neither `match_event_points()` nor the
+`leaderboard_match_player_scores` view had a `WHEN` branch for the event
+type, so `points` summed to 0 regardless of frames won. That mattered
+beyond display: `stats.ts` uses `points` as the ranking `score` for every
+non-cricket/non-golf sport, so pool's placement/season-points ranking was
+arbitrary (everyone tied at 0, order = array position) rather than
+frames-driven.
+
+Fix (`20260731212631_score_pool_frame_events.sql`): added
+`WHEN event_type = 'pool_frame' THEN 1` to both `match_event_points()` and
+the view's `event_totals` CTE, mirroring `tt_point`'s existing flat-1-per-
+event pattern — each event already fans out to the correct winning team via
+routing, so 1 point per event correctly tallies frames won. Added two
+pgTAP assertions to `match_event_points.test.sql` (39 → 41, 14 → 15
+branches covered) and updated the count in CLAUDE.md's Testing section.
+Verified live via direct `execute_sql` calls against both functions before
+and after. Zero retroactive impact: confirmed no `pool_frame` event has
+ever been recorded (`match_events` had zero rows of that type, and no
+`match_rooms` row has `sport = 'pool'` with any events at all) — nobody
+has played pool in the app yet.
+
+Separately surfaced, not fixed: `PoolRoom.tsx` has no win-condition logic
+at all (no best-of-N, no explicit "declare winner"), so it never calls
+`completeMatchWithWinner()`/`completeMatchWithTeamWinner()` the way every
+other team sport does — `match.winner_team_id` never gets set for pool,
+so `matches_won`/`matches_lost` counters always read 0 regardless of
+frames won. Logged in `todo.md` as part of a broader "Pool/Cards/Table
+Tennis/Basketball are minimally built compared to Golf/Cricket" item
+rather than fixed here — deciding how these rooms declare a winner is a
+product decision, not a migration.
+
 ## Pre-session RLS and migration incidents (documented in `CLAUDE.md`, dated)
 
 These predate the 2026-07-30 work above but are the reason several of this

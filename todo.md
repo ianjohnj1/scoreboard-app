@@ -52,12 +52,26 @@ sport-tab refetching, `sequence_num` write race) — full write-up in
   `player`; non-team `custom_score` (`CustomRoom.tsx:42`) puts the profile id
   in `event_data.entityId` where nothing reads it. So cards scores, table
   tennis set wins, and solo custom-game scores contribute nothing to season
-  points. `pool_frame` routes fine but only increments a counter the
-  leaderboard never reads, so pool players also always score 0. The SQL view
-  reproduces all of this deliberately rather than changing behaviour mid-
-  refactor. Fix is in the rooms, not the view: pass `player_id` on the
-  `recordEvent()` call. Note that fixing it will retroactively change season
-  points for any existing match of those sports.
+  points. The SQL view reproduces all of this deliberately rather than
+  changing behaviour mid-refactor. Fix is in the rooms, not the view: pass
+  `player_id` on the `recordEvent()` call. Note that fixing it will
+  retroactively change season points for any existing match of those sports.
+  (`pool_frame` was the fourth case here — routed fine via `team_id` but had
+  no scoring branch at all; fixed 2026-08-01, see fix-history.md, no
+  retroactive impact since no pool match has ever been played.)
+- **Pool, Cards, Table Tennis, and Basketball rooms are minimally built
+  compared to Golf and Cricket.** `PoolRoom.tsx` has no win-condition logic
+  at all — no best-of-N, no "declare winner" button — so it never calls
+  `completeMatchWithWinner()`/`completeMatchWithTeamWinner()` the way every
+  other team sport does, meaning `match.winner_team_id` never gets set and
+  `matches_won`/`matches_lost` lifetime counters always read 0 for pool
+  regardless of frames won (a match can only be closed via the generic
+  "End & Lock" action, which never assigns a winner). Cards/Table
+  Tennis/Basketball likely share the same gap — not yet individually
+  audited. Bringing these four rooms up to Golf/Cricket's level of
+  completeness (explicit win conditions, proper stat tracking) would
+  resolve this and likely several of the routing quirks above as a
+  byproduct, rather than patching each symptom separately.
 - **`DartsRoom` and `CustomRoom` never rehydrate from `match_events`.**
   CLAUDE.md requires every sport without normalised side tables to do this,
   and TableTennis/Pool/Basketball/Cards all do — Darts and Custom only ever
@@ -73,13 +87,6 @@ sport-tab refetching, `sequence_num` write race) — full write-up in
   is linear in concurrent users against a 200-connection / 2M-message-per-month
   free-plan budget. Fix: scope the filters, or poll on an interval for the
   fan-engagement widget.
-- **Session-identity RLS helpers are VOLATILE.** `get_current_session_profile_id()`,
-  `is_admin_session()`, and `is_match_participant()` are declared VOLATILE, so
-  Postgres re-evaluates them **per row** instead of once per query
-  (`can_score_match` and `is_match_host` are already correctly STABLE).
-  Harmless today only because every SELECT policy is `USING (true)` and writes
-  are single-row — the day a read policy gets scoped, this becomes an N-lookup
-  scan. Fix: mark them STABLE. Cheap, and worth doing before it's load-bearing.
 - **`deleteMatch()` is ten sequential non-transactional round trips.** A
   failure partway leaves orphans, and `comments` is polymorphic with no FK to
   catch it. Fix: one `SECURITY DEFINER` RPC doing the whole teardown in a
@@ -107,8 +114,26 @@ creation.*
 - **Index bloat on the hot append-only table.** `match_events` carries seven
   indexes (`pkey`, `match_id`, `player_id`, `recorded_by`, `sequence`,
   `team_id`, and the `match_id + sequence_num` unique), all maintained on
-  every scored event; 20 indexes are unused project-wide. Drop what nothing
-  reads.
+  every scored event — all seven are genuinely used (checked live via
+  `pg_stat_user_indexes`), so no drops there. Of the 29 other indexes
+  flagged `idx_scan = 0` project-wide, checked each individually
+  (2026-08-01): one, `idx_match_rooms_room_code`, was a true duplicate of
+  the `room_code` unique constraint's own index and was dropped
+  (`20260731211556`). The other 17 are FK-support indexes deliberately
+  added by `20260726044100_perf_hardening_fk_indexes_and_rls.sql` ("cover
+  every foreign key with an index... none of these tables are large yet")
+  — 0 scans just reflects that those tables are still small enough for
+  seq scans and that FK-constraint checks don't register as `idx_scan` the
+  same way query filters do. Leave them; dropping them now would undo
+  intentional scaling prep, not remove cruft.
+- **`profiles.user_id` is a dead column.** FK to `auth.users(id) ON DELETE
+  SET NULL`, 100% NULL across all rows, never referenced anywhere in the
+  app — a leftover from before the app moved to custom PIN auth (no
+  Supabase Auth is used at all now). Its index (`idx_profiles_user_id`)
+  was left alone in the cleanup above since dropping the column itself is
+  a schema-shape decision, not an index question. Worth a separate call:
+  drop the column (and its FK/index) once confirmed nothing latent depends
+  on `auth.users` linkage.
 - **`player_career_analytics` scans all players before filtering.** Its
   `player_match_status` CTE joins every `match_players` row against every
   completed match, then filters to one profile — a full scan per profile-page

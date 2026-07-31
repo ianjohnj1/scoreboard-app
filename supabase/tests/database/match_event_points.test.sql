@@ -18,7 +18,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(41);
 
 -- Signature: pins the contract so a future edit that changes the argument
 -- order or return type fails loudly here instead of via a silent leaderboard
@@ -114,6 +114,18 @@ select is(
 select is(
   match_event_points('tt_point', '{"anything": "ignored"}'::jsonb),
   1::numeric, 'tt_point: scores 1 regardless of payload content'
+);
+
+-- pool_frame: flat 1, same shape as tt_point. Each event already carries the
+-- winning team's team_id (see PoolRoom.tsx), so routing fans it to the right
+-- roster on its own - this branch only had to stop returning 0.
+select is(
+  match_event_points('pool_frame', '{"winner": 0, "frames": [3, 1]}'::jsonb),
+  1::numeric, 'pool_frame: scores 1 regardless of the running frames tally'
+);
+select is(
+  match_event_points('pool_frame', null),
+  1::numeric, 'pool_frame: scores 1 even with null event_data'
 );
 
 -- bball_score: jsonb_num(data, 'pts')
