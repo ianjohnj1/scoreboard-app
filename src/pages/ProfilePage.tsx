@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { linkGuestAccount, getAllProfiles } from '../lib/auth';
+import { setProfile as setCachedProfile } from '../lib/profileCache';
 import { useAuth } from '../contexts/AuthContext';
 import UserAvatar from '../components/UserAvatar';
 import Modal from '../components/Modal';
@@ -120,6 +121,7 @@ export default function ProfilePage() {
         const safeProfile = { ...updatedProfile, pin_hash: null };
         syncCurrentUser(safeProfile);
         setTargetProfile(safeProfile);
+        setCachedProfile(safeProfile);
       }
       setShowSettingsModal(false);
     } catch (err) {
@@ -174,6 +176,7 @@ export default function ProfilePage() {
         const safeProfile = { ...updatedProfile, pin_hash: null };
         syncCurrentUser(safeProfile);
         setTargetProfile(safeProfile);
+        setCachedProfile(safeProfile);
       }
     } catch (err: unknown) {
       console.error("Error uploading avatar:", err);

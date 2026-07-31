@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Share2, MoreVertical, CheckCircle, Pause, Play, Users, Search, Plus, X } from 'lucide-react';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, updateMatchStatus, getSportIcon, getSportLabel } from '../lib/matches';
-import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { getProfilesByIds } from '../lib/profileCache';
 import { useAuth } from '../contexts/AuthContext';
 import { getAllProfiles, addGuestPlayer } from '../lib/auth';
 import Modal from '../components/Modal';
@@ -97,14 +98,10 @@ export default function MatchRoomPage() {
       // Load all profiles
       const pids = [...new Set((p || []).map(mp => mp.profile_id))];
       if (pids.length > 0) {
-        const { data } = await supabase
-          .from('profiles')
-          .select(SAFE_PROFILE_COLUMNS)
-          .in('id', pids);
+        const map = await getProfilesByIds(pids);
 
         if (isMounted && !isMounted()) return;
 
-        const map = new Map((data || []).map((pr) => [pr.id, { ...pr, pin_hash: null } as Profile]));
         setProfiles(map);
       }
     } catch (error: unknown) {
@@ -139,12 +136,7 @@ export default function MatchRoomPage() {
 
     const pids = [...new Set((p || []).map(mp => mp.profile_id))];
     if (pids.length > 0) {
-      const { data } = await supabase
-        .from('profiles')
-        .select(SAFE_PROFILE_COLUMNS)
-        .in('id', pids);
-
-      const map = new Map((data || []).map((pr) => [pr.id, { ...pr, pin_hash: null } as Profile]));
+      const map = await getProfilesByIds(pids);
       setProfiles(prev => new Map([...prev, ...map]));
     }
   }, [match]);

@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { getMatchByCode, getMatchTeams, getMatchPlayers, getSportIcon, getSportLabel } from '../lib/matches';
-import { supabase, SAFE_PROFILE_COLUMNS } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { getProfilesByIds } from '../lib/profileCache';
 import { useAuth } from '../contexts/AuthContext';
 import CheerBar from '../components/CheerBar';
 import CommentFeed from '../components/CommentFeed';
@@ -52,8 +53,7 @@ export default function SpectatorPage() {
 
     const pids = [...new Set(p.map((mp: MatchPlayer) => mp.profile_id))];
     if (pids.length > 0) {
-      const { data } = await supabase.from('profiles').select(SAFE_PROFILE_COLUMNS).in('id', pids);
-      setProfiles(new Map((data || []).map((pr) => [pr.id, { ...pr, pin_hash: null } as Profile])));
+      setProfiles(await getProfilesByIds(pids));
     }
     setLoading(false);
   }, [roomCode]);

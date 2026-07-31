@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RotateCcw, Target, Trophy, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { completeMatchWithTeamWinner, recordEvent, undoLastEvent } from '../../lib/matches';
+import { useMatchEvents } from '../../hooks/useMatchEvents';
 import UserAvatar from '../UserAvatar';
 import Modal from '../Modal';
 import TieBreakerChallenge from '../TieBreakerChallenge';
 import { useNavigate } from 'react-router-dom';
 import type { MatchContext } from '../../pages/MatchRoomPage';
-import type { MatchEvent, MatchTeam, Profile, PlayerCareerAnalytics } from '../../lib/supabase';
+import type { MatchTeam, Profile, PlayerCareerAnalytics } from '../../lib/supabase';
 
 type PvPRules = {
   starting_balls_per_team?: number;
@@ -27,7 +28,6 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
   const rules = (match.house_rules || {}) as PvPRules;
   const startingBalls = Math.max(1, Number(rules.starting_balls_per_team || 5));
 
-  const [events, setEvents] = useState<MatchEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [showTieBreaker, setShowTieBreaker] = useState(false);
   const [analytics, setAnalytics] = useState<Map<string, PlayerCareerAnalytics>>(new Map());
@@ -65,22 +65,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
 
   const orderedTeams = useMemo(() => [...teams].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)), [teams]);
 
-  const loadEvents = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('match_events')
-      .select('*')
-      .eq('match_id', match.id)
-      .eq('is_undone', false)
-      .order('sequence_num', { ascending: true });
-
-    if (!isMountedRef.current) return;
-    if (error) {
-      console.error('Error loading PvP events:', error);
-      return;
-    }
-
-    setEvents(data || []);
-  }, [match.id]);
+  const { events, refresh: refreshEvents } = useMatchEvents(match.id);
 
   const loadAnalytics = useCallback(async () => {
     const profileIds = players.map(player => player.profile_id);
@@ -103,21 +88,19 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
   }, [match.is_practice, players]);
 
   useEffect(() => {
-    loadEvents();
     loadAnalytics();
-  }, [loadAnalytics, loadEvents]);
+  }, [loadAnalytics]);
 
   useEffect(() => {
     const channel = supabase
       .channel(`pvp:${match.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${match.id}` }, () => loadEvents())
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'match_rooms', filter: `id=eq.${match.id}` }, () => loadAnalytics())
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadAnalytics, loadEvents, match.id]);
+  }, [loadAnalytics, match.id]);
 
   const isMatchComplete = match.status === 'completed' || Boolean(match.winner_team_id);
   const isBroadcastView = !isMatchComplete && (isSpectator || isTvDisplayMode);
@@ -282,7 +265,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
         currentUser?.id
       );
 
-      await loadEvents();
+      await refreshEvents();
     } finally {
       if (isMountedRef.current) setLoading(false);
     }
@@ -295,7 +278,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
     try {
       resolvedWinnerRef.current = false;
       await undoLastEvent(match.id);
-      await loadEvents();
+      await refreshEvents();
       if (match.status !== 'completed') {
         setShowTieBreaker(false);
       }
@@ -394,7 +377,7 @@ export default function PvPRoom({ ctx }: { ctx: MatchContext }) {
 
       await completeMatchWithTeamWinner(match.id, winningTeamId);
       setShowTieBreaker(false);
-      await loadEvents();
+      await refreshEvents();
       onRefresh();
     } finally {
       if (isMountedRef.current) setLoading(false);
