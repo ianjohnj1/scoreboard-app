@@ -93,6 +93,8 @@ Variants live in `house_rules.variant`, not in `sport`:
 
 **Adding a sport or variant touches four places**: `getSportRoom()` in `MatchRoomPage.tsx`, the `sportRooms` map *and* the golf-variant branch in `SpectatorPage.tsx`, `getSportIcon()`/`getSportLabel()` in `lib/matches.ts`, and the `SPORTS` / setup steps in `NewMatchPage.tsx`. The two dispatch tables drift easily — spectator view silently falling back to `CustomRoom` is the usual symptom.
 
+`ChipOffRoom.tsx` is the reference implementation for what a complete room looks like — `useMatchEvents` rehydration/live-sync, writes guarded inside the handler (not just disabled JSX), spectator/TV read-only handling, an explicit win condition, and `player_id` always passed to `recordEvent()` so the event actually scores. [docs/sport-room-template.md](docs/sport-room-template.md) writes that pattern up as a checklist plus a copy-ready skeleton (`src/components/sports/_TemplateRoom.tsx`, unwired by design) — use it both for new sports and for bringing the thinner rooms (`DartsRoom`, `CustomRoom`, `TableTennisRoom`, `PoolRoom`, `BasketballRoom`, `CardsRoom`) up to this level, see `todo.md`.
+
 Darts sub-games are pure reducers (`createXState` / `applyXThrow` over `DartsRuntimeState`) in `src/lib/darts/`, kept separate from the SVG board geometry in `board.ts`.
 
 ### Dashboard match sections are a strict partition, not independent queries

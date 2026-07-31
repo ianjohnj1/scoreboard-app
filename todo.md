@@ -72,6 +72,11 @@ sport-tab refetching, `sequence_num` write race) — full write-up in
   completeness (explicit win conditions, proper stat tracking) would
   resolve this and likely several of the routing quirks above as a
   byproduct, rather than patching each symptom separately.
+  [docs/sport-room-template.md](docs/sport-room-template.md) (added
+  2026-08-01) writes up what "complete" means as a checklist against
+  `ChipOffRoom`, plus a copy-ready skeleton at
+  `src/components/sports/_TemplateRoom.tsx` — use it rather than
+  re-deriving the pattern per room.
 - **`DartsRoom` and `CustomRoom` never rehydrate from `match_events`, and
   none of the six non-side-table rooms sync live across devices.**
   CLAUDE.md requires every sport without normalised side tables to
@@ -92,7 +97,8 @@ sport-tab refetching, `sequence_num` write race) — full write-up in
   `docs/fix-history.md`) already solves rehydration + live cross-device
   sync + reconnect safety in one hook, proven out in `ChipOffRoom`/
   `PvPRoom`. Wiring these six rooms onto it (as part of bringing them up to
-  Golf/Cricket's completeness generally, see the item above) closes this
+  Golf/Cricket's completeness generally, see the item above and
+  [docs/sport-room-template.md](docs/sport-room-template.md)) closes this
   without reinventing the fetch/subscribe logic per room.
 - **Unfiltered global realtime subscriptions.** `fanboy-live` in
   `LeaderboardPage.tsx` listens to *every* comment INSERT app-wide; the
