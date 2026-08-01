@@ -202,19 +202,22 @@ creation.*
 ## Future features
 
 - **Pool: leaderboard/season-points wiring for the new `16_ball`/`8_ball`
-  event types.** `PoolRoom.tsx` (added 2026-08-01) records
-  `pool_ball_potted`/`pool_miss`/`pool_foul`/`pool_game_won`, but none have a
-  `match_event_points()` branch yet, so pool matches currently only
-  contribute the generic `matches_played`/`matches_won` completion bump —
-  no season points, no placement credit. Also open once that lands: **win %
-  when Bigs vs win % when Smalls**, and **win % when broke first** (side 0's
-  first shot is definitionally the break — no new event needed, it's already
-  the first event in the log). Both need the SQL side to independently
-  derive group assignment from the first-legal-pot rule (`ballGroupOf()` in
-  `poolEngine.ts` is the client-side reference for that rule) or add a
-  dedicated event, then join it against match outcome across history in
-  `getGlobalLeaderboardData()` or a new view column — deferred from the
-  initial build as a second-phase aggregation problem, not a room concern.
+  event types is done** (`20260801124346_score_pool_ball_tracking_events.sql`)
+  — `pool_ball_potted` scores 1 point when `own_ball` is true,
+  `pool_game_won` is a flat 7-point winner bonus (proof it always outranks
+  the loser is in the migration comment), `pool_miss`/`pool_foul` score 0.
+  Verified live via the pgTAP harness (51/51,
+  `supabase/tests/database/match_event_points.test.sql`) and confirmed zero
+  retroactive impact (no live `pool_ball_potted`/etc. rows existed yet).
+  **Still open**: **win % when Bigs vs win % when Smalls**, and **win % when
+  broke first** (side 0's first shot is definitionally the break — no new
+  event needed, it's already the first event in the log). Both need the SQL
+  side to independently derive group assignment from the first-legal-pot
+  rule (`ballGroupOf()` in `poolEngine.ts` is the client-side reference for
+  that rule) or add a dedicated event, then join it against match outcome
+  across history in `getGlobalLeaderboardData()` or a new view column — a
+  second-phase aggregation problem needing its own column(s) and
+  `GlobalPlayerStats`/UI wiring, not just a points branch.
 - **Kelly Pool variant.** Deferred from the 2026-08-01 pool rebuild —
   needs secret per-player ball assignment and call-shot elimination, a
   different enough mechanic from `16_ball`/`8_ball` that it warrants its own

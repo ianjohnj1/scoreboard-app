@@ -18,7 +18,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(41);
+select plan(51);
 
 -- Signature: pins the contract so a future edit that changes the argument
 -- order or return type fails loudly here instead of via a silent leaderboard
@@ -126,6 +126,57 @@ select is(
 select is(
   match_event_points('pool_frame', null),
   1::numeric, 'pool_frame: scores 1 even with null event_data'
+);
+
+-- pool_ball_potted: 1 point, but only when own_ball is literally true - a
+-- ball potted into the opponent's group scores nothing for the shooter (see
+-- 20260801124346_score_pool_ball_tracking_events.sql).
+select is(
+  match_event_points('pool_ball_potted', '{"ball": 9, "group": "bigs", "own_ball": true}'::jsonb),
+  1::numeric, 'pool_ball_potted: own_ball true scores 1'
+);
+select is(
+  match_event_points('pool_ball_potted', '{"ball": 9, "group": "bigs", "own_ball": false}'::jsonb),
+  0::numeric, 'pool_ball_potted: own_ball false scores 0'
+);
+select is(
+  match_event_points('pool_ball_potted', '{"ball": 8, "group": "bigs", "own_ball": true}'::jsonb),
+  1::numeric, 'pool_ball_potted: the legal winning black scores 1 like any other own ball'
+);
+select is(
+  match_event_points('pool_ball_potted', '{"ball": 8, "group": null, "own_ball": false}'::jsonb),
+  0::numeric, 'pool_ball_potted: the illegal early black scores 0'
+);
+select is(
+  match_event_points('pool_ball_potted', '{}'::jsonb),
+  0::numeric, 'pool_ball_potted: missing own_ball falls back to 0'
+);
+select is(
+  match_event_points('pool_ball_potted', null),
+  0::numeric, 'pool_ball_potted: null event_data falls back to 0, no error'
+);
+
+-- pool_miss / pool_foul: no branch, always 0 regardless of payload - same as
+-- every other no-op event type in this function.
+select is(
+  match_event_points('pool_miss', '{}'::jsonb),
+  0::numeric, 'pool_miss: always scores 0'
+);
+select is(
+  match_event_points('pool_foul', '{"reason": "cue_ball_potted"}'::jsonb),
+  0::numeric, 'pool_foul: always scores 0'
+);
+
+-- pool_game_won: flat 7, same shape as tt_point/pool_frame. 7 is chosen so
+-- the winner's total always exceeds the loser's regardless of match length -
+-- see the migration comment for the proof.
+select is(
+  match_event_points('pool_game_won', '{"method": "legal_black"}'::jsonb),
+  7::numeric, 'pool_game_won: scores a flat 7-point bonus'
+);
+select is(
+  match_event_points('pool_game_won', null),
+  7::numeric, 'pool_game_won: scores 7 even with null event_data'
 );
 
 -- bball_score: jsonb_num(data, 'pts')
