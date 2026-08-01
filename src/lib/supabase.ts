@@ -166,6 +166,19 @@ export type PlayerCareerAnalytics = {
   atw_efficiency: number;
   killer_lethality: number;
   killer_survival: number;
+  // Pool stats
+  total_pool_fouls: number;
+  total_pool_shots: number;
+  pool_avg_shots_per_pot: number;
+  pool_wire_to_wire_wins: number;
+  pool_longest_streak: number;
+  pool_shortest_win_shots: number | null;
+  pool_matches_as_bigs: number;
+  pool_wins_as_bigs: number;
+  pool_matches_as_smalls: number;
+  pool_wins_as_smalls: number;
+  pool_matches_broke_first: number;
+  pool_wins_broke_first: number;
 };
 
 export type Comment = {

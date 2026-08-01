@@ -85,14 +85,31 @@
   * Exact Live Calculation: the view's `pool_broke_first` column is `true` for whichever roster player/team owns the match's earliest live event among `pool_ball_potted`/`pool_miss`/`pool_foul` (side 0 always shoots first per `poolEngine.ts`'s `createPoolState`), `false` for the other side, `NULL` for legacy `pool_frame`-only matches. `getGlobalLeaderboardData()` tallies `pool_matches_broke_first`/`pool_wins_broke_first`; the Pool tab renders it as a win percentage alongside the group splits.
   * Web Storage Mechanism: computed live by the `leaderboard_match_player_scores` view's `pool_broke_first` column (`supabase/migrations/20260801133346_pool_group_and_break_stats.sql`), read into memory by `getGlobalLeaderboardData()`.
 
-**Not yet implemented** — discussed as ideas, no code path exists for any of these. Would each need either a new column on `leaderboard_match_player_scores` (or a dedicated view) and `GlobalPlayerStats` wiring, or in some cases a new persisted event — see `todo.md`'s "Pool: leaderboard/season-points wiring" future-features item:
+The six stats below all live on `player_career_analytics` instead of `leaderboard_match_player_scores` — that's the view `ProfilePage.tsx` actually reads (`GlobalPlayerStats`/`leaderboard_match_player_scores` only feeds `LeaderboardPage`). `ProfilePage.tsx`'s Pool "Advanced Analytics" tile block and the Compare Modal's `'pool'` entry both render all six, plus Win % Bigs/Smalls/Broke pulled from `leaderboard_match_player_scores`'s `pool_group`/`pool_broke_first` via a join rather than re-derived — one source of truth for that logic. Added in `supabase/migrations/20260801211316_pool_career_analytics.sql`.
 
-* **Fouls (times potted the white)** — raw count of `pool_foul` events per player exists in `match_events` today; no aggregate column or UI surfaces it.
-* **Pot Streak (most potted in one turn)** — `poolEngine.ts`'s `longestStreakBySide` computes this live, in-match, for the win-screen summary card only; nothing persists it or aggregates it across matches.
-* **Average Shots per Pot** — would be `(pool_ball_potted + pool_miss + pool_foul) / pool_ball_potted` per player, aggregated across matches; no such column exists.
-* **Wire-to-wire clean run** (won without ever missing or fouling) — derivable per-match from the winner having zero `pool_miss`/`pool_foul` events, but not currently checked or counted anywhere.
-* **Bigs/Smalls assignment count** (how often a player has played each group, independent of win rate) — the `pool_group` column now carries this fact (see win-% entry above), so this would just be a `pool_matches_as_bigs`/`pool_matches_as_smalls` display, both of which `getGlobalLeaderboardData()` already tallies; only the UI presentation is missing.
-* **Shortest game (fewest total shots to win)** — derivable from the completed match's event count, but no query or UI does this today.
+* **Fouls**
+  * Exact Live Calculation: `COUNT(*)` of `pool_foul` events per player, per match, summed across all their pool matches.
+  * Web Storage Mechanism: `player_career_analytics`'s `pool_shot_counts` CTE → `total_pool_fouls`, read into memory by `ProfilePage.tsx`'s `loadStats()`.
+
+* **Average Shots per Pot**
+  * Exact Live Calculation: `(pool_ball_potted + pool_miss + pool_foul events by this player) / (their own-group pool_ball_potted count)`, lower is better — mirrors `poolEngine.ts`'s in-match `potsBySide`/`missesBySide`/`foulsBySide` bookkeeping, aggregated across matches instead of reset per game.
+  * Web Storage Mechanism: `player_career_analytics`'s `pool_shot_counts` CTE → `pool_avg_shots_per_pot`.
+
+* **Wire-to-wire clean run**
+  * Exact Live Calculation: count of matches won with zero `pool_miss`/`pool_foul` events on this player's side.
+  * Web Storage Mechanism: `player_career_analytics` → `pool_wire_to_wire_wins`, computed from `pool_shot_counts` joined against `player_match_status.is_win`.
+
+* **Longest Pot Streak**
+  * Exact Live Calculation: the longest run of consecutive own-group pots within one continuous turn, career-best. Computed via a gaps-and-islands query: a running `SUM() OVER (ORDER BY sequence_num)` increments on every turn-ending event (`pool_miss`/`pool_foul`/potting the opponent's ball — the same three cases `poolEngine.ts`'s `endTurn()` fires on), assigning every event a stable `turn_group` id that's constant within one turn and higher for every subsequent one; then `MAX` of own-ball pots per `(match, player, turn_group)`.
+  * Web Storage Mechanism: `player_career_analytics`'s `pool_streaks` CTE → `pool_longest_streak`.
+
+* **Shortest game (fewest total shots to win)**
+  * Exact Live Calculation: fewest total shots (`pool_ball_potted`/`pool_miss`/`pool_foul`, both sides combined) across matches this player won — mirrors golf's `best_score_classic` personal-best pattern in `stats.ts`. `NULL` if the player has never won a pool match.
+  * Web Storage Mechanism: `player_career_analytics`'s `pool_match_shot_counts` CTE (per-match total) → `MIN(...) FILTER (WHERE is_win)` → `pool_shortest_win_shots`.
+
+* **Bigs/Smalls assignment count**
+  * Exact Live Calculation: raw count of matches played as each group, read off `pool_group` (see win-% entry above) independent of outcome.
+  * Web Storage Mechanism: `player_career_analytics` → `pool_matches_as_bigs`/`pool_matches_as_smalls`, joined in from `leaderboard_match_player_scores`.
 
 ---
 

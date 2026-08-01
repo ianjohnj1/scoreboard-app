@@ -534,6 +534,49 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   )}
+
+                  {s.sport === 'pool' && (
+                    <div className="space-y-2 mt-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Shots/Pot</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.pool_avg_shots_per_pot > 0 ? s.pool_avg_shots_per_pot.toFixed(2) : '-'}</p>
+                        </div>
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Fouls</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.total_pool_fouls}</p>
+                        </div>
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Wire-to-Wire</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.pool_wire_to_wire_wins}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Win % Bigs</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.pool_matches_as_bigs > 0 ? `${((s.pool_wins_as_bigs / s.pool_matches_as_bigs) * 100).toFixed(0)}%` : '-'}</p>
+                        </div>
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Win % Smalls</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.pool_matches_as_smalls > 0 ? `${((s.pool_wins_as_smalls / s.pool_matches_as_smalls) * 100).toFixed(0)}%` : '-'}</p>
+                        </div>
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Win % Broke</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.pool_matches_broke_first > 0 ? `${((s.pool_wins_broke_first / s.pool_matches_broke_first) * 100).toFixed(0)}%` : '-'}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Longest Streak</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.pool_longest_streak}</p>
+                        </div>
+                        <div className="stat-card bg-blue-950/20 border-blue-900/30">
+                          <p className="text-blue-500 text-[10px] uppercase font-bold">Shortest Win</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.pool_shortest_win_shots ?? '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
             ))}
           </div>
@@ -741,7 +784,7 @@ export default function ProfilePage() {
           </div>
 
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-            {['cricket', 'chip_off', 'golf', 'putt_vs_putt', 'darts'].map(sport => {
+            {['cricket', 'chip_off', 'golf', 'putt_vs_putt', 'darts', 'pool'].map(sport => {
               const mySportStats = currentUserStats.find(s => s.sport === sport);
               const theirSportStats = stats.find(s => s.sport === sport);
 
@@ -789,6 +832,30 @@ export default function ProfilePage() {
                         <ComparisonRow label="% Holed" val1={mySportStats?.career_pct_holed} val2={theirSportStats?.career_pct_holed} format="pct" />
                         <ComparisonRow label="Career Holes" val1={mySportStats?.holed_putts_total} val2={theirSportStats?.holed_putts_total} />
                         <ComparisonRow label="Clutch Putts" val1={mySportStats?.clutch_putts} val2={theirSportStats?.clutch_putts} />
+                      </>
+                    )}
+                    {sport === 'pool' && (
+                      <>
+                        <ComparisonRow label="Shots/Pot" val1={mySportStats?.pool_avg_shots_per_pot} val2={theirSportStats?.pool_avg_shots_per_pot} format="float" lowerIsBetter />
+                        <ComparisonRow label="Fouls" val1={mySportStats?.total_pool_fouls} val2={theirSportStats?.total_pool_fouls} lowerIsBetter />
+                        <ComparisonRow label="Wire-to-Wire" val1={mySportStats?.pool_wire_to_wire_wins} val2={theirSportStats?.pool_wire_to_wire_wins} />
+                        <ComparisonRow label="Win % Bigs"
+                          val1={mySportStats && mySportStats.pool_matches_as_bigs > 0 ? (mySportStats.pool_wins_as_bigs / mySportStats.pool_matches_as_bigs) * 100 : undefined}
+                          val2={theirSportStats && theirSportStats.pool_matches_as_bigs > 0 ? (theirSportStats.pool_wins_as_bigs / theirSportStats.pool_matches_as_bigs) * 100 : undefined}
+                          format="pct"
+                        />
+                        <ComparisonRow label="Win % Smalls"
+                          val1={mySportStats && mySportStats.pool_matches_as_smalls > 0 ? (mySportStats.pool_wins_as_smalls / mySportStats.pool_matches_as_smalls) * 100 : undefined}
+                          val2={theirSportStats && theirSportStats.pool_matches_as_smalls > 0 ? (theirSportStats.pool_wins_as_smalls / theirSportStats.pool_matches_as_smalls) * 100 : undefined}
+                          format="pct"
+                        />
+                        <ComparisonRow label="Win % Broke"
+                          val1={mySportStats && mySportStats.pool_matches_broke_first > 0 ? (mySportStats.pool_wins_broke_first / mySportStats.pool_matches_broke_first) * 100 : undefined}
+                          val2={theirSportStats && theirSportStats.pool_matches_broke_first > 0 ? (theirSportStats.pool_wins_broke_first / theirSportStats.pool_matches_broke_first) * 100 : undefined}
+                          format="pct"
+                        />
+                        <ComparisonRow label="Longest Streak" val1={mySportStats?.pool_longest_streak} val2={theirSportStats?.pool_longest_streak} />
+                        <ComparisonRow label="Shortest Win" val1={mySportStats?.pool_shortest_win_shots ?? undefined} val2={theirSportStats?.pool_shortest_win_shots ?? undefined} lowerIsBetter />
                       </>
                     )}
                     <ComparisonRow label="Win Rate" 

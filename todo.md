@@ -226,6 +226,28 @@ creation.*
   edge case, team mode), always rolled back — zero retroactive impact, no
   live pool match data exists yet. See `STATS_AUDIT_LOG.md`'s Pool section
   for the full calculation write-up.
+  **The remaining not-yet-implemented list (Fouls, Average Shots per Pot,
+  Wire-to-Wire Wins, Longest Pot Streak, Shortest Win, Bigs/Smalls assignment
+  counts) is also done** (`20260801211316_pool_career_analytics.sql`,
+  2026-08-01) — added to `player_career_analytics` instead of
+  `leaderboard_match_player_scores`, since that's the view `ProfilePage.tsx`
+  actually reads (the win-% stats above only ever reached `LeaderboardPage`).
+  Fouls/shots/wire-to-wire are plain per-player counts over the three
+  shot-producing event types; Shortest Win mirrors golf's `best_score_classic`
+  personal-best pattern; Bigs/Smalls counts and the win-% stats are joined in
+  from `leaderboard_match_player_scores`'s `pool_group`/`pool_broke_first`
+  rather than re-derived. Longest Pot Streak was the one non-trivial piece —
+  a gaps-and-islands window-function query (a running `SUM() OVER (ORDER BY
+  sequence_num)` that increments on every turn-ending event, per
+  `poolEngine.ts`'s `endTurn()`, giving every event a stable per-turn group
+  id to `MAX()` own-ball pots within). `ProfilePage.tsx` gained a Pool
+  "Advanced Analytics" tile block (mirroring Chip Off's) and a `'pool'` entry
+  in the Compare Modal's hardcoded sport list, closing the profile-parity gap
+  where Pool previously got only the generic Played/Won/Lost tile and no
+  comparison rows at all. Verified via a synthetic `execute_sql` transaction
+  covering a multi-turn streak, an interrupted-then-resumed turn, and a
+  wire-to-wire win, always rolled back — zero retroactive impact. See
+  `STATS_AUDIT_LOG.md`'s Pool section for the full calculation write-up.
 - **Kelly Pool variant.** Deferred from the 2026-08-01 pool rebuild —
   needs secret per-player ball assignment and call-shot elimination, a
   different enough mechanic from `16_ball`/`8_ball` that it warrants its own
