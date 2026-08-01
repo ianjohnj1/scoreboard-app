@@ -77,15 +77,21 @@
   * Exact Live Calculation: `match_event_points()` scores `pool_ball_potted` as 1 point when `event_data.own_ball` is `true` (0 otherwise), `pool_game_won` as a flat 7-point winner bonus, `pool_miss`/`pool_foul` as 0. Summed per player into the `points` column, which `getGlobalLeaderboardData()` uses as the ranking `score` for placement (100/50/25/10 via `calculatePlacementSP`) — same as every non-cricket/non-golf sport. No pool-specific milestone bonus exists.
   * Web Storage Mechanism: computed live by `match_event_points()` + the `leaderboard_match_player_scores` view's `points` column (`supabase/migrations/20260801124346_score_pool_ball_tracking_events.sql`), read into memory by `getGlobalLeaderboardData()`.
 
+* **Win % when Bigs vs Win % when Smalls**
+  * Exact Live Calculation: the view's `pool_group` column identifies which group (`bigs`/`smalls`) each roster player played as, read directly off the match's first non-8 `pool_ball_potted` event's `event_data.group` (whoever pots first opens the table and is assigned that ball's group — see `poolEngine.ts`'s `applyPoolPot`); the opposite roster side gets the other group. `NULL` for both sides if the match ended via an illegal early-black foul before the table ever opened, or for legacy `pool_frame`-only matches with no ball-tracking events at all. `getGlobalLeaderboardData()` tallies `pool_matches_as_bigs`/`pool_wins_as_bigs` and `pool_matches_as_smalls`/`pool_wins_as_smalls` per player across all their pool matches; `LeaderboardPage.tsx`'s Pool tab renders each as a win percentage.
+  * Web Storage Mechanism: computed live by the `leaderboard_match_player_scores` view's `pool_group` column (`supabase/migrations/20260801133346_pool_group_and_break_stats.sql`), read into memory by `getGlobalLeaderboardData()`.
+
+* **Win % when broke first**
+  * Exact Live Calculation: the view's `pool_broke_first` column is `true` for whichever roster player/team owns the match's earliest live event among `pool_ball_potted`/`pool_miss`/`pool_foul` (side 0 always shoots first per `poolEngine.ts`'s `createPoolState`), `false` for the other side, `NULL` for legacy `pool_frame`-only matches. `getGlobalLeaderboardData()` tallies `pool_matches_broke_first`/`pool_wins_broke_first`; the Pool tab renders it as a win percentage alongside the group splits.
+  * Web Storage Mechanism: computed live by the `leaderboard_match_player_scores` view's `pool_broke_first` column (`supabase/migrations/20260801133346_pool_group_and_break_stats.sql`), read into memory by `getGlobalLeaderboardData()`.
+
 **Not yet implemented** — discussed as ideas, no code path exists for any of these. Would each need either a new column on `leaderboard_match_player_scores` (or a dedicated view) and `GlobalPlayerStats` wiring, or in some cases a new persisted event — see `todo.md`'s "Pool: leaderboard/season-points wiring" future-features item:
 
-* **Win % when Bigs vs Win % when Smalls** — needs group assignment (currently derived only client-side, in-match, via `ballGroupOf()` in `poolEngine.ts`; not persisted or joinable against match outcome across history) plus a SQL aggregate or a dedicated `pool_group_assigned`-style event.
-* **Win % when broke first** — the breaker is definitionally whoever the first recorded event in the match belongs to (side 0 / lineup slot 0 at game creation), so no new event is needed, but nothing currently reads or aggregates it.
 * **Fouls (times potted the white)** — raw count of `pool_foul` events per player exists in `match_events` today; no aggregate column or UI surfaces it.
 * **Pot Streak (most potted in one turn)** — `poolEngine.ts`'s `longestStreakBySide` computes this live, in-match, for the win-screen summary card only; nothing persists it or aggregates it across matches.
 * **Average Shots per Pot** — would be `(pool_ball_potted + pool_miss + pool_foul) / pool_ball_potted` per player, aggregated across matches; no such column exists.
 * **Wire-to-wire clean run** (won without ever missing or fouling) — derivable per-match from the winner having zero `pool_miss`/`pool_foul` events, but not currently checked or counted anywhere.
-* **Bigs/Smalls assignment count** — same blocker as the win-% version above; no persisted group-assignment fact to tally.
+* **Bigs/Smalls assignment count** (how often a player has played each group, independent of win rate) — the `pool_group` column now carries this fact (see win-% entry above), so this would just be a `pool_matches_as_bigs`/`pool_matches_as_smalls` display, both of which `getGlobalLeaderboardData()` already tallies; only the UI presentation is missing.
 * **Shortest game (fewest total shots to win)** — derivable from the completed match's event count, but no query or UI does this today.
 
 ---

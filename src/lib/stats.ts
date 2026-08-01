@@ -50,6 +50,8 @@ export interface MatchPlayerScoreRow {
   hio: number;
   tens: number;
   holed_putts_total: number;
+  pool_broke_first: boolean | null;
+  pool_group: 'bigs' | 'smalls' | null;
 }
 
 type SafeProfile = Omit<Profile, 'pin_hash'>;
@@ -72,6 +74,12 @@ export interface GlobalPlayerStats {
   cricket_lifetime_wickets: number;
   golf_lifetime_points: number;
   golf_lifetime_hio: number;
+  pool_matches_as_bigs: number;
+  pool_wins_as_bigs: number;
+  pool_matches_as_smalls: number;
+  pool_wins_as_smalls: number;
+  pool_matches_broke_first: number;
+  pool_wins_broke_first: number;
 }
 
 interface MatchStatsListEntry {
@@ -294,7 +302,13 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
         cricket_lifetime_runs: 0,
         cricket_lifetime_wickets: 0,
         golf_lifetime_points: 0,
-        golf_lifetime_hio: 0
+        golf_lifetime_hio: 0,
+        pool_matches_as_bigs: 0,
+        pool_wins_as_bigs: 0,
+        pool_matches_as_smalls: 0,
+        pool_wins_as_smalls: 0,
+        pool_matches_broke_first: 0,
+        pool_wins_broke_first: 0
       });
     }
     return globalStats.get(key)!;
@@ -400,8 +414,20 @@ export async function getGlobalLeaderboardData(): Promise<GlobalPlayerStats[]> {
         } else {
           g.golf_lifetime_hio += ms.extra.hio;
         }
+      } else if (match.sport === 'pool') {
+        if (ms.extra.pool_group === 'bigs') {
+          g.pool_matches_as_bigs += 1;
+          g.pool_wins_as_bigs += ms.is_winner ? 1 : 0;
+        } else if (ms.extra.pool_group === 'smalls') {
+          g.pool_matches_as_smalls += 1;
+          g.pool_wins_as_smalls += ms.is_winner ? 1 : 0;
+        }
+        if (ms.extra.pool_broke_first === true) {
+          g.pool_matches_broke_first += 1;
+          g.pool_wins_broke_first += ms.is_winner ? 1 : 0;
+        }
       }
-      
+
       // Update best score
       if (g.best_score === null) {
         g.best_score = ms.score;

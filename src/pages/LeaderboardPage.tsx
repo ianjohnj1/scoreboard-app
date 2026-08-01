@@ -408,6 +408,28 @@ export default function LeaderboardPage() {
                       </div>
                     );
                   }
+                  if (sport === 'pool') {
+                    const pct = (wins: number, played: number) => played > 0 ? Math.round((wins / played) * 100) : null;
+                    const bigsPct = pct(entry.pool_wins_as_bigs, entry.pool_matches_as_bigs);
+                    const smallsPct = pct(entry.pool_wins_as_smalls, entry.pool_matches_as_smalls);
+                    const brokePct = pct(entry.pool_wins_broke_first, entry.pool_matches_broke_first);
+                    return (
+                      <div className="flex gap-4 text-xs font-mono ml-auto flex-shrink-0">
+                        <div className="flex flex-col items-end min-w-[40px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Win % Bigs</span>
+                          <span className="text-charcoal-100 font-bold">{bigsPct !== null ? `${bigsPct}%` : '-'}</span>
+                        </div>
+                        <div className="flex flex-col items-end min-w-[40px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Win % Smalls</span>
+                          <span className="text-charcoal-100 font-bold">{smallsPct !== null ? `${smallsPct}%` : '-'}</span>
+                        </div>
+                        <div className="flex flex-col items-end min-w-[40px]">
+                          <span className="text-charcoal-500 uppercase text-[8px]">Win % Broke</span>
+                          <span className="text-accent-400 font-bold">{brokePct !== null ? `${brokePct}%` : '-'}</span>
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <div className="text-right flex-shrink-0 ml-auto">
                       <p className="text-warning-400 font-bold font-mono text-sm">{entry.season_points} SP</p>

@@ -209,15 +209,23 @@ creation.*
   Verified live via the pgTAP harness (51/51,
   `supabase/tests/database/match_event_points.test.sql`) and confirmed zero
   retroactive impact (no live `pool_ball_potted`/etc. rows existed yet).
-  **Still open**: **win % when Bigs vs win % when Smalls**, and **win % when
-  broke first** (side 0's first shot is definitionally the break — no new
-  event needed, it's already the first event in the log). Both need the SQL
-  side to independently derive group assignment from the first-legal-pot
-  rule (`ballGroupOf()` in `poolEngine.ts` is the client-side reference for
-  that rule) or add a dedicated event, then join it against match outcome
-  across history in `getGlobalLeaderboardData()` or a new view column — a
-  second-phase aggregation problem needing its own column(s) and
-  `GlobalPlayerStats`/UI wiring, not just a points branch.
+  **Win % when Bigs vs win % when Smalls, and win % when broke first are also
+  done** (`20260801133346_pool_group_and_break_stats.sql`, 2026-08-01) — the
+  `leaderboard_match_player_scores` view gained `pool_group` (read off the
+  match's first non-8 `pool_ball_potted` event's `event_data.group`, fanned
+  to the opposite roster side; `NULL` for both sides if the table never
+  legally opened, or for legacy `pool_frame`-only matches) and
+  `pool_broke_first` (whoever owns the match's earliest live
+  `pool_ball_potted`/`pool_miss`/`pool_foul` event, since side 0 always shoots
+  first). `GlobalPlayerStats` in `stats.ts` tallies
+  `pool_matches_as_bigs`/`pool_wins_as_bigs`,
+  `pool_matches_as_smalls`/`pool_wins_as_smalls`, and
+  `pool_matches_broke_first`/`pool_wins_broke_first`; `LeaderboardPage.tsx`'s
+  Pool tab renders all three as win percentages. Verified via a synthetic
+  `execute_sql` transaction (individual-mode legal win, illegal-early-black
+  edge case, team mode), always rolled back — zero retroactive impact, no
+  live pool match data exists yet. See `STATS_AUDIT_LOG.md`'s Pool section
+  for the full calculation write-up.
 - **Kelly Pool variant.** Deferred from the 2026-08-01 pool rebuild —
   needs secret per-player ball assignment and call-shot elimination, a
   different enough mechanic from `16_ball`/`8_ball` that it warrants its own
