@@ -59,47 +59,52 @@ sport-tab refetching, `sequence_num` write race) — full write-up in
   (`pool_frame` was the fourth case here — routed fine via `team_id` but had
   no scoring branch at all; fixed 2026-08-01, see fix-history.md, no
   retroactive impact since no pool match has ever been played.)
-- **Pool, Cards, Table Tennis, and Basketball rooms are minimally built
-  compared to Golf and Cricket.** `PoolRoom.tsx` has no win-condition logic
-  at all — no best-of-N, no "declare winner" button — so it never calls
-  `completeMatchWithWinner()`/`completeMatchWithTeamWinner()` the way every
-  other team sport does, meaning `match.winner_team_id` never gets set and
-  `matches_won`/`matches_lost` lifetime counters always read 0 for pool
-  regardless of frames won (a match can only be closed via the generic
-  "End & Lock" action, which never assigns a winner). Cards/Table
-  Tennis/Basketball likely share the same gap — not yet individually
-  audited. Bringing these four rooms up to Golf/Cricket's level of
-  completeness (explicit win conditions, proper stat tracking) would
-  resolve this and likely several of the routing quirks above as a
-  byproduct, rather than patching each symptom separately.
+- **Cards, Table Tennis, and Basketball rooms are minimally built compared
+  to Golf and Cricket.** No explicit win-condition logic, so none of them
+  call `completeMatchWithWinner()`/`completeMatchWithTeamWinner()` the way
+  every other team sport does — `match.winner_team_id` never gets set and
+  `matches_won`/`matches_lost` lifetime counters always read 0 regardless of
+  the in-room score (a match can only be closed via the generic "End & Lock"
+  action, which never assigns a winner). Not yet individually audited beyond
+  that. **Pool no longer has this gap** — `PoolRoom.tsx` (added 2026-08-01,
+  `16_ball`/`8_ball` variants) has explicit win detection and calls
+  `completeMatchWithWinner`/`completeMatchWithTeamWinner`; the old frame-tally
+  behaviour lives on as `PoolFramesRoom.tsx`, used only as a fallback for
+  matches with no `house_rules.variant` (none are created that way anymore).
+  Bringing the remaining three rooms up to Golf/Cricket's level of
+  completeness (explicit win conditions, proper stat tracking) would resolve
+  this and likely several of the routing quirks above as a byproduct, rather
+  than patching each symptom separately.
   [docs/sport-room-template.md](docs/sport-room-template.md) (added
   2026-08-01) writes up what "complete" means as a checklist against
   `ChipOffRoom`, plus a copy-ready skeleton at
   `src/components/sports/_TemplateRoom.tsx` — use it rather than
   re-deriving the pattern per room.
 - **`DartsRoom` and `CustomRoom` never rehydrate from `match_events`, and
-  none of the six non-side-table rooms sync live across devices.**
+  none of the remaining non-side-table rooms sync live across devices.**
   CLAUDE.md requires every sport without normalised side tables to
-  rehydrate from `match_events`, and TableTennis/Pool/Basketball/Cards all
+  rehydrate from `match_events`, and TableTennis/Basketball/Cards all
   do on mount — Darts and Custom only ever *write* (`recordEvent` at
   `DartsRoom.tsx:182`), with state coming from `buildInitialState(...)`.
   Refreshing mid-501 resets the score to the start. Darts is the most
   stateful sport in the app, so this is the worst room to have it in.
   Confirmed bug, not a scaling issue — but at 100 users it stops being rare.
   **Re-checked 2026-08-01 while building the delta-sync hook mentioned
-  next: it's worse than previously scoped** — TableTennis, Pool,
-  Basketball, and Cards rehydrate on mount but have no realtime
-  subscription at all (no `.channel(` in any of the four files), so a
-  second device never sees a live score update for any of these six
-  sports, not just Darts/Custom.
+  next: it's worse than previously scoped** — TableTennis, Basketball,
+  and Cards rehydrate on mount but have no realtime
+  subscription at all (no `.channel(` in any of the three files), so a
+  second device never sees a live score update for any of these five
+  sports, not just Darts/Custom. (`PoolRoom.tsx`, the `16_ball`/`8_ball`
+  room added 2026-08-01, is fully solved via `useMatchEvents` — rehydration,
+  live cross-device sync, and reconnect safety all in one hook, no gap left.)
   Fix mechanism now exists and doesn't need to be built per-room:
   `useMatchEvents()` (`src/hooks/useMatchEvents.ts`, added 2026-08-01, see
   `docs/fix-history.md`) already solves rehydration + live cross-device
   sync + reconnect safety in one hook, proven out in `ChipOffRoom`/
-  `PvPRoom`. Wiring these six rooms onto it (as part of bringing them up to
-  Golf/Cricket's completeness generally, see the item above and
-  [docs/sport-room-template.md](docs/sport-room-template.md)) closes this
-  without reinventing the fetch/subscribe logic per room.
+  `PvPRoom`/`PoolRoom`. Wiring the remaining five rooms onto it (as part of
+  bringing them up to Golf/Cricket's completeness generally, see the item
+  above and [docs/sport-room-template.md](docs/sport-room-template.md))
+  closes this without reinventing the fetch/subscribe logic per room.
 - **Unfiltered global realtime subscriptions.** `fanboy-live` in
   `LeaderboardPage.tsx` listens to *every* comment INSERT app-wide; the
   leaderboard and `ProfilePage` both listen to every completed match. Fan-out
@@ -196,4 +201,22 @@ creation.*
 
 ## Future features
 
-_None planned yet — add here as ideas come up._
+- **Pool: leaderboard/season-points wiring for the new `16_ball`/`8_ball`
+  event types.** `PoolRoom.tsx` (added 2026-08-01) records
+  `pool_ball_potted`/`pool_miss`/`pool_foul`/`pool_game_won`, but none have a
+  `match_event_points()` branch yet, so pool matches currently only
+  contribute the generic `matches_played`/`matches_won` completion bump —
+  no season points, no placement credit. Also open once that lands: **win %
+  when Bigs vs win % when Smalls**, and **win % when broke first** (side 0's
+  first shot is definitionally the break — no new event needed, it's already
+  the first event in the log). Both need the SQL side to independently
+  derive group assignment from the first-legal-pot rule (`ballGroupOf()` in
+  `poolEngine.ts` is the client-side reference for that rule) or add a
+  dedicated event, then join it against match outcome across history in
+  `getGlobalLeaderboardData()` or a new view column — deferred from the
+  initial build as a second-phase aggregation problem, not a room concern.
+- **Kelly Pool variant.** Deferred from the 2026-08-01 pool rebuild —
+  needs secret per-player ball assignment and call-shot elimination, a
+  different enough mechanic from `16_ball`/`8_ball` that it warrants its own
+  design pass rather than forcing it into the shared `poolEngine.ts` reducer.
+- _Nothing else planned yet — add here as ideas come up._

@@ -388,6 +388,8 @@ export function getSportLabel(sport: string, customName?: string | null, variant
     if (variant === 'countdown') return 'Darts - 501/301';
     if (variant === 'around_the_world') return 'Darts - Around the World';
     if (variant === 'killer') return 'Darts - Killer';
+    if (variant === '16_ball') return '16 Ball Pool';
+    if (variant === '8_ball') return '8 Ball';
     if (variant === 'classic') return baseLabel;
   }
 

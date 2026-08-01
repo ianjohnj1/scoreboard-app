@@ -17,7 +17,9 @@ export type RuleContextKey =
   | 'putt_vs_putt'
   | 'darts_countdown'
   | 'darts_around_the_world'
-  | 'darts_killer';
+  | 'darts_killer'
+  | 'pool_16_ball'
+  | 'pool_8_ball';
 
 export const RULE_DEFINITIONS: Record<RuleContextKey, Record<string, RuleDefinition>> = {
   cricket: {
@@ -209,6 +211,40 @@ export const RULE_DEFINITIONS: Record<RuleContextKey, Record<string, RuleDefinit
       },
     },
   },
+  pool_16_ball: {
+    variant: {
+      label: 'Format',
+      explain: 'Open-table pub rules: pot any of your own group in any pocket, no called shots.',
+      values: {
+        '16_ball': { label: '16 Ball Pool', explain: 'The first ball legally potted assigns Bigs (9-15) or Smalls (1-7) to that side; the table stays open until then.' },
+      },
+    },
+    team_play: {
+      label: 'Team Pairs',
+      explain: 'Play as two pairs instead of one player per side. Partners alternate strictly by lineup order each time the turn returns to their side.',
+      values: {
+        true: { label: 'On', explain: 'Two teams of pairs compete, alternating shooters by lineup order.' },
+        false: { label: 'Off', explain: 'One player per side.' },
+      },
+    },
+  },
+  pool_8_ball: {
+    variant: {
+      label: 'Format',
+      explain: 'Call-shot rules: call your ball and pocket before every shot (self-officiated - the app tracks pots and turns, not the call itself).',
+      values: {
+        '8_ball': { label: '8 Ball', explain: 'Same potting and group rules as 16 Ball, played under call-shot etiquette.' },
+      },
+    },
+    team_play: {
+      label: 'Team Pairs',
+      explain: 'Play as two pairs instead of one player per side. Partners alternate strictly by lineup order each time the turn returns to their side.',
+      values: {
+        true: { label: 'On', explain: 'Two teams of pairs compete, alternating shooters by lineup order.' },
+        false: { label: 'Off', explain: 'One player per side.' },
+      },
+    },
+  },
 };
 
 export function getRuleContextKey(sport: string, houseRules: Record<string, unknown> | null | undefined): RuleContextKey | null {
@@ -228,6 +264,12 @@ export function getRuleContextKey(sport: string, houseRules: Record<string, unkn
     if (variant === 'around_the_world') return 'darts_around_the_world';
     if (variant === 'killer') return 'darts_killer';
     return 'darts_countdown';
+  }
+
+  if (sport === 'pool') {
+    if (variant === '8_ball') return 'pool_8_ball';
+    if (variant === '16_ball') return 'pool_16_ball';
+    return null;
   }
 
   return null;

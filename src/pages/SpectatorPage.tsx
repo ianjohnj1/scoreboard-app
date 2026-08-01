@@ -13,6 +13,7 @@ import ChipOffRoom from '../components/sports/ChipOffRoom';
 import PvPRoom from '../components/sports/PvPRoom';
 import TableTennisRoom from '../components/sports/TableTennisRoom';
 import PoolRoom from '../components/sports/PoolRoom';
+import PoolFramesRoom from '../components/sports/PoolFramesRoom';
 import BasketballRoom from '../components/sports/BasketballRoom';
 import CardsRoom from '../components/sports/CardsRoom';
 import CustomRoom from '../components/sports/CustomRoom';
@@ -26,7 +27,7 @@ const sportRooms: Record<string, React.ComponentType<{ ctx: MatchContext }>> = {
   golf: GolfRoom,
   darts: DartsRoom,
   table_tennis: TableTennisRoom,
-  pool: PoolRoom,
+  pool: PoolFramesRoom,
   basketball: BasketballRoom,
   cards: CardsRoom,
   custom: CustomRoom,
@@ -108,6 +109,8 @@ export default function SpectatorPage() {
     SportRoom = ChipOffRoom;
   } else if (match.sport === 'golf' && match.house_rules?.variant === 'putt_vs_putt') {
     SportRoom = PvPRoom;
+  } else if (match.sport === 'pool' && (match.house_rules?.variant === '16_ball' || match.house_rules?.variant === '8_ball')) {
+    SportRoom = PoolRoom;
   }
 
   const ctx: MatchContext = {

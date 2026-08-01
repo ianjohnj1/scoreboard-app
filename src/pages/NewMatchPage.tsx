@@ -31,7 +31,7 @@ const SPORTS = [
   { id: 'golf', label: 'Golf', icon: '⛳', team: false, desc: '9 or 18-hole scorecard with par tracking' },
   { id: 'darts', label: 'Darts', icon: '🎯', team: false, desc: 'Standard countdown, elimination, or round-the-board mini games.' },
   { id: 'table_tennis', label: 'Table Tennis', icon: '🏓', team: true, desc: 'Win-by-2 game tracking' },
-  { id: 'pool', label: '8-Ball Pool', icon: '🎱', team: true, desc: 'Frame tracking & golden breaks' },
+  { id: 'pool', label: 'Pool', icon: '🎱', team: false, desc: '16 Ball or 8 Ball with live ball-by-ball tracking' },
   { id: 'basketball', label: 'Basketball', icon: '🏀', team: true, desc: '1/2/3 point tracking with players' },
   { id: 'cards', label: 'Card Games', icon: '🃏', team: false, desc: 'End-of-round grid scoring' },
   { id: 'custom', label: 'Custom Sport', icon: '🎮', team: null, desc: 'Build your own scoring interface' },
@@ -77,7 +77,7 @@ const PIZZA_PUTT_COURSE = [
 ];
 
 // Added dedicated sub-steps for sports with multiple setup modes
-type Step = 'sport' | 'cricket_variant' | 'golf_variant' | 'darts_variant' | 'config' | 'players';
+type Step = 'sport' | 'cricket_variant' | 'golf_variant' | 'darts_variant' | 'pool_variant' | 'config' | 'players';
 
 export default function NewMatchPage() {
   const navigate = useNavigate();
@@ -87,6 +87,7 @@ export default function NewMatchPage() {
   const [cricketVariant, setCricketVariant] = useState<'classic' | 'backyard' | null>(null);
   const [golfVariant, setGolfVariant] = useState<'classic' | 'chip_off' | 'putt_vs_putt' | null>(null);
   const [dartsVariant, setDartsVariant] = useState<DartsVariant | null>(null);
+  const [poolVariant, setPoolVariant] = useState<'16_ball' | '8_ball' | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
 
   // Custom config
@@ -115,6 +116,7 @@ export default function NewMatchPage() {
   const [individualPlayers, setIndividualPlayers] = useState<Profile[]>([]);
 
   const [chipOffTeamPlay, setChipOffTeamPlay] = useState(false);
+  const [poolTeamPlay, setPoolTeamPlay] = useState(false);
 
   const [playerSearch, setPlayerSearch] = useState('');
   const [guestName, setGuestName] = useState('');
@@ -175,16 +177,21 @@ export default function NewMatchPage() {
           ? golfVariant
           : selectedSport === 'darts'
             ? dartsVariant
-            : null,
+            : selectedSport === 'pool'
+              ? poolVariant
+              : null,
   };
   const isPuttVsPutt = selectedSport === 'golf' && golfVariant === 'putt_vs_putt';
   const isChipOffTeamPlay = selectedSport === 'golf' && golfVariant === 'chip_off' && chipOffTeamPlay;
+  const isPoolTeamPlay = selectedSport === 'pool' && poolTeamPlay;
 
   // Backyard mode forces an individual format setup
   // Practice mode also defaults to individual format to allow flexible multi-player "nets"
   const isTeam = isPuttVsPutt
     ? true
     : isChipOffTeamPlay
+    ? true
+    : isPoolTeamPlay
     ? true
     : isPractice
     ? false
@@ -243,10 +250,12 @@ export default function NewMatchPage() {
     else if (step === 'cricket_variant') setStep('sport');
     else if (step === 'golf_variant') setStep('sport');
     else if (step === 'darts_variant') setStep('sport');
+    else if (step === 'pool_variant') setStep('sport');
     else if (step === 'config') {
       if (selectedSport === 'cricket') setStep('cricket_variant');
       else if (selectedSport === 'golf') setStep('golf_variant');
       else if (selectedSport === 'darts') setStep('darts_variant');
+      else if (selectedSport === 'pool') setStep('pool_variant');
       else setStep('sport');
     } else if (step === 'players') setStep('config');
   };
@@ -277,7 +286,11 @@ export default function NewMatchPage() {
             ...effectiveHouseRules,
             comments_enabled: commentsEnabled,
             course_data: selectedSport === 'golf' && golfVariant === 'classic' ? golfCourse : null,
-            team_play: selectedSport === 'golf' && golfVariant === 'chip_off' ? chipOffTeamPlay : undefined,
+            team_play: selectedSport === 'golf' && golfVariant === 'chip_off'
+              ? chipOffTeamPlay
+              : selectedSport === 'pool'
+                ? poolTeamPlay
+                : undefined,
             holes:
               selectedSport === 'golf'
                 ? golfVariant === 'chip_off'
@@ -294,7 +307,8 @@ export default function NewMatchPage() {
           } : {
             cricket_variant: cricketVariant || null,
             golf_variant: golfVariant || null,
-            darts_sub_mode_id: dartsVariant || null
+            darts_sub_mode_id: dartsVariant || null,
+            pool_variant: poolVariant || null
           }
         });
   
@@ -326,7 +340,7 @@ export default function NewMatchPage() {
             match_id: matchId,
             profile_id: p.id,
             team_id: team1Id,
-            lineup_order: (isPuttVsPutt || isChipOffTeamPlay) ? team1Players.findIndex(player => player.id === p.id) + 1 : null,
+            lineup_order: (isPuttVsPutt || isChipOffTeamPlay || isPoolTeamPlay) ? team1Players.findIndex(player => player.id === p.id) + 1 : null,
             role: 'player'
           }));
 
@@ -336,7 +350,7 @@ export default function NewMatchPage() {
             match_id: matchId,
             profile_id: p.id,
             team_id: team2Id,
-            lineup_order: (isPuttVsPutt || isChipOffTeamPlay) ? team2Players.findIndex(player => player.id === p.id) + 1 : null,
+            lineup_order: (isPuttVsPutt || isChipOffTeamPlay || isPoolTeamPlay) ? team2Players.findIndex(player => player.id === p.id) + 1 : null,
             role: 'player'
           }));
 
@@ -453,7 +467,9 @@ export default function NewMatchPage() {
                     ? 'Select Golf Mode'
                     : step === 'darts_variant'
                       ? 'Select Darts Mode'
-                      : step === 'config'
+                      : step === 'pool_variant'
+                        ? 'Select Pool Mode'
+                        : step === 'config'
                         ? 'Configure rules'
                         : 'Add players'}
             </p>
@@ -481,14 +497,24 @@ export default function NewMatchPage() {
                     setCricketVariant(null);
                     setGolfVariant(null);
                     setDartsVariant(null);
+                    setPoolVariant(null);
                     setTeam1Players(activeUser ? [activeUser] : []);
                     setTeam2Players([]);
                     setIndividualPlayers(activeUser ? [activeUser] : []);
                     setStep('darts_variant');
+                  } else if (s.id === 'pool') {
+                    setCricketVariant(null);
+                    setGolfVariant(null);
+                    setDartsVariant(null);
+                    setPoolVariant(null);
+                    setPoolTeamPlay(false);
+                    setIndividualPlayers(activeUser ? [activeUser] : []);
+                    setStep('pool_variant');
                   } else {
                     setCricketVariant(null);
                     setGolfVariant(null);
                     setDartsVariant(null);
+                    setPoolVariant(null);
                     setTeam1Players(activeUser ? [activeUser] : []);
                     setTeam2Players([]);
                     setIndividualPlayers(activeUser ? [activeUser] : []);
@@ -711,6 +737,49 @@ export default function NewMatchPage() {
         </div>
       )}
 
+      {/* STEP 1.8: Pool Branch Option */}
+      {step === 'pool_variant' && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-charcoal-400 uppercase tracking-wider">Select Pool Mode</h2>
+
+          <button
+            onClick={() => {
+              setSelectedSport('pool');
+              setPoolVariant('16_ball');
+              setStep('config');
+            }}
+            className="w-full card p-5 flex items-center gap-4 text-left hover:border-accent-500/50 transition-all"
+          >
+            <div className="w-12 h-12 rounded-xl bg-accent-950/40 border border-accent-800 flex items-center justify-center text-2xl text-accent-400">
+              🎱
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-charcoal-50 text-base">16 Ball Pool</h3>
+              <p className="text-charcoal-400 text-sm mt-0.5">Open-table pub rules. First ball potted assigns Bigs or Smalls - no called shots.</p>
+            </div>
+            <ChevronRight size={18} className="text-charcoal-500" />
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedSport('pool');
+              setPoolVariant('8_ball');
+              setStep('config');
+            }}
+            className="w-full card p-5 flex items-center gap-4 text-left hover:border-warning-500/50 transition-all"
+          >
+            <div className="w-12 h-12 rounded-xl bg-warning-950/30 border border-warning-800 flex items-center justify-center text-2xl text-warning-400">
+              ⚫
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-charcoal-50 text-base">8 Ball</h3>
+              <p className="text-charcoal-400 text-sm mt-0.5">Call-shot etiquette. Same potting rules as 16 Ball - the app tracks pots and turns, not the call.</p>
+            </div>
+            <ChevronRight size={18} className="text-charcoal-500" />
+          </button>
+        </div>
+      )}
+
 
         {/* STEP 2: Configuration */}
         {step === 'config' && sport && (
@@ -769,7 +838,9 @@ export default function NewMatchPage() {
                   ? `${sport.label} ${cricketVariant ? `(${cricketVariant === 'classic' ? 'Classic' : 'Backyard'}) ` : ''}Rules`
                   : selectedSport === 'darts' && dartsModeMeta
                     ? `${sport.label} (${dartsModeMeta.title}) Rules`
-                    : `${sport.label} Rules`}
+                    : selectedSport === 'pool' && poolVariant
+                      ? `${sport.label} (${poolVariant === '8_ball' ? '8 Ball' : '16 Ball'}) Rules`
+                      : `${sport.label} Rules`}
               </h3>
               
               {selectedSport === 'cricket' ? (
@@ -1007,6 +1078,30 @@ export default function NewMatchPage() {
                     onChange={v => setHouseRules(prev => ({...prev, hazard_penalty: v}))}
                   />
                 </div>
+              ) : selectedSport === 'pool' && poolVariant ? (
+                <div className="space-y-4 pt-2">
+                  <div className="rounded-xl border border-charcoal-700 bg-charcoal-900/50 px-3 py-3">
+                    <p className="text-sm leading-relaxed text-charcoal-400">
+                      {poolVariant === '16_ball'
+                        ? 'Open table: the first ball legally potted assigns Bigs (9-15) or Smalls (1-7) to that side. Pot any of your own group in any pocket, then the black to win.'
+                        : 'Call-shot etiquette: call your ball and pocket before every shot. Groups still assign from the first legal pot, then the black to win.'}
+                    </p>
+                  </div>
+                  <RuleToggle
+                    label="Team Pairs"
+                    explanation={getRuleDefinition(selectedSport, effectiveHouseRules, 'team_play')?.explain}
+                    value={poolTeamPlay}
+                    onChange={v => {
+                      setPoolTeamPlay(v);
+                      if (v) {
+                        setTeam1Players(activeUser ? [activeUser] : []);
+                        setTeam2Players([]);
+                      } else {
+                        setIndividualPlayers(activeUser ? [activeUser] : []);
+                      }
+                    }}
+                  />
+                </div>
               ) : (
                 <p className="text-charcoal-400 text-sm">Playing with standard configuration rules.</p>
               )}
@@ -1025,21 +1120,21 @@ export default function NewMatchPage() {
               <>
                 <TeamPlayerPicker teamName={team1Name} onTeamNameChange={setTeam1Name} teamColor="#3b82f6" players={team1Players} onRemove={(id) => removePlayerFromGroup(id, 'team1')} onAdd={() => setActiveTeamPicker('team1')} />
                 <TeamPlayerPicker teamName={team2Name} onTeamNameChange={setTeam2Name} teamColor="#ef4444" players={team2Players} onRemove={(id) => removePlayerFromGroup(id, 'team2')} onAdd={() => setActiveTeamPicker('team2')} />
-                {(isPuttVsPutt || isChipOffTeamPlay) && (
+                {(isPuttVsPutt || isChipOffTeamPlay || isPoolTeamPlay) && (
                   <>
                     <LineupOrderBuilder
                       title={`${team1Name} Lineup Order`}
                       players={team1Players}
                       onChange={setTeam1Players}
                       accentColor="#3b82f6"
-                      description={isChipOffTeamPlay ? 'Set the order this team cycles through — turns alternate with the other team, one player at a time.' : undefined}
+                      description={isChipOffTeamPlay || isPoolTeamPlay ? 'Set the order this team cycles through — turns alternate with the other team, one player at a time.' : undefined}
                     />
                     <LineupOrderBuilder
                       title={`${team2Name} Lineup Order`}
                       players={team2Players}
                       onChange={setTeam2Players}
                       accentColor="#ef4444"
-                      description={isChipOffTeamPlay ? 'Set the order this team cycles through — turns alternate with the other team, one player at a time.' : undefined}
+                      description={isChipOffTeamPlay || isPoolTeamPlay ? 'Set the order this team cycles through — turns alternate with the other team, one player at a time.' : undefined}
                     />
                   </>
                 )}

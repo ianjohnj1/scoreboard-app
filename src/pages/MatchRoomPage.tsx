@@ -17,6 +17,7 @@ import PvPRoom from '../components/sports/PvPRoom';
 import DartsRoom from '../components/sports/DartsRoom';
 import TableTennisRoom from '../components/sports/TableTennisRoom';
 import PoolRoom from '../components/sports/PoolRoom';
+import PoolFramesRoom from '../components/sports/PoolFramesRoom';
 import BasketballRoom from '../components/sports/BasketballRoom';
 import CardsRoom from '../components/sports/CardsRoom';
 import CustomRoom from '../components/sports/CustomRoom';
@@ -525,12 +526,15 @@ function getSportRoom(match: MatchRoom): React.ComponentType<{ ctx: MatchContext
     return PvPRoom;
   }
 
+  if (sport === 'pool') {
+    return variant === '16_ball' || variant === '8_ball' ? PoolRoom : PoolFramesRoom;
+  }
+
   const rooms: Record<string, React.ComponentType<{ ctx: MatchContext }>> = {
     cricket: CricketRoom,
     golf: GolfRoom,
     darts: DartsRoom,
     table_tennis: TableTennisRoom,
-    pool: PoolRoom,
     basketball: BasketballRoom,
     cards: CardsRoom,
     custom: CustomRoom,
