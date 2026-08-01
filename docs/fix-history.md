@@ -382,6 +382,39 @@ Tennis/Basketball are minimally built compared to Golf/Cricket" item
 rather than fixed here — deciding how these rooms declare a winner is a
 product decision, not a migration.
 
+### Pool rebuilt with a real win condition; its new events scored 0 (2026-08-01)
+
+Follow-up to both gaps above, same day. `PoolRoom.tsx` was rebuilt behind
+new `house_rules.variant` values (`16_ball`/`8_ball`) with an actual rules
+engine (`src/lib/pool/poolEngine.ts`) — open-table group assignment, turn
+rotation with team-pair lineup cycling, streak tracking, and legal/illegal
+black-ball win detection — closing the "no win-condition logic" gap noted
+above. The old frame-tally room moves to `PoolFramesRoom.tsx`, kept only as
+the fallback for matches with no `variant` set. This landed
+`matches_won`/`matches_lost` correctly (they read `winner_profile_id`/
+`winner_team_id`, set via `completeMatchWithWinner`/
+`completeMatchWithTeamWinner` like every other complete room), but left the
+new room's four event types (`pool_ball_potted`, `pool_miss`, `pool_foul`,
+`pool_game_won`) with no `match_event_points()` branch — the exact same
+class of gap `pool_frame` had, just for the new room instead of the old one.
+
+Fix (`20260801124346_score_pool_ball_tracking_events.sql`): `pool_ball_potted`
+scores 1 point but only when `event_data.own_ball` is `true` — a ball potted
+into the opponent's group benefits their clearance, not the shooter's score.
+`pool_game_won` scores a flat 7-point bonus to the winner. 7 isn't arbitrary:
+a legal win requires potting all 7 of your own group first (7 points before
+the bonus), and a player who *loses* via the illegal-early-black foul can
+have at most 6 own-group balls potted (a 7th would have made their black
+attempt legal, i.e. a win) — so the winner's `points` total is always
+strictly greater than the loser's, independent of match length.
+`pool_miss`/`pool_foul` score 0 via the existing `ELSE` fallback, no new
+branch needed. Added 10 pgTAP assertions to `match_event_points.test.sql`
+(41 → 51, 15 → 17 branches covered) and updated the counts in CLAUDE.md's
+Testing section. Verified live via `execute_sql` against both the function
+and a full pgTAP run (51/51) before committing. Zero retroactive impact:
+confirmed no `pool_ball_potted`/`pool_miss`/`pool_foul`/`pool_game_won`
+event has ever been recorded live.
+
 ## Pre-session RLS and migration incidents (documented in `CLAUDE.md`, dated)
 
 These predate the 2026-07-30 work above but are the reason several of this

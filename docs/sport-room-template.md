@@ -4,9 +4,13 @@ How to build a new sport room, or bring an existing one up to par, using
 `ChipOffRoom.tsx` as the reference implementation. `ChipOffRoom` is the most
 complete room in the app (delta-synced live sync, guarded writes, full win
 condition, team + solo modes, rematch flow) — copy its shape rather than one
-of the thinner rooms (`PoolRoom`, `CardsRoom`, `TableTennisRoom`,
-`BasketballRoom`, `DartsRoom`, `CustomRoom`), which `todo.md`'s P1 list
-already tracks as needing this same work.
+of the thinner rooms (`CardsRoom`, `TableTennisRoom`, `BasketballRoom`,
+`DartsRoom`, `CustomRoom`), which `todo.md`'s P1 list already tracks as
+needing this same work. `PoolRoom` (the `16_ball`/`8_ball` ball-tracking
+room, added 2026-08-01) is already built to this standard — see its own
+reducer at `src/lib/pool/poolEngine.ts` for how the pattern extends to a
+sport with real rule branching (group assignment, turn rotation, win
+detection) rather than a flat score total.
 
 A ready-to-copy skeleton implementing everything below is at
 [`src/components/sports/_TemplateRoom.tsx`](../src/components/sports/_TemplateRoom.tsx).
@@ -70,9 +74,13 @@ When the match's win condition is met, call `completeMatchWithWinner(matchId, wi
 (solo) or `completeMatchWithTeamWinner(matchId, winnerTeamId)` (team), then
 `ctx.onRefresh()`. Without this, `match.winner_profile_id`/`winner_team_id`
 never gets set and lifetime `matches_won`/`matches_lost` counters stay 0
-forever, even though the match visibly ended — `PoolRoom` has exactly this
-bug today (no win-condition logic at all; can only be closed via the
-generic "End & Lock" header action, which assigns no winner).
+forever, even though the match visibly ended — `PoolFramesRoom` (the legacy
+frame-tally fallback for pool matches with no `variant` set) has exactly
+this bug today: no win-condition logic at all, can only be closed via the
+generic "End & Lock" header action, which assigns no winner. It's not on
+the "bring up to standard" list below because it's a dead-end fallback, not
+a room new matches ever route to — see `PoolRoom` (the `16_ball`/`8_ball`
+room) for the fixed version of the same sport.
 
 Golf is the one deliberate exception: classic golf has no win-condition
 button, so `determineAndSaveWinnerIfMissing()` backfills it as a
@@ -135,10 +143,10 @@ If it's a new `event_type` rather than a new sport shell, also add:
 
 ## Bringing an existing thin room up to this level
 
-For `DartsRoom`, `CustomRoom`, `TableTennisRoom`, `PoolRoom`,
-`BasketballRoom`, `CardsRoom` (the `todo.md` P1 list): the fix is the same
-five-point checklist above applied in place, not a rewrite from scratch.
-Concretely, per room:
+For `DartsRoom`, `CustomRoom`, `TableTennisRoom`, `BasketballRoom`,
+`CardsRoom` (the `todo.md` P1 list): the fix is the same five-point
+checklist above applied in place, not a rewrite from scratch. Concretely,
+per room:
 
 - Swap the room's ad-hoc `match_events` fetch (if any) and any hand-rolled
   `.channel(...)` subscription for `useMatchEvents(match.id)`.
