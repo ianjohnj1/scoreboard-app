@@ -198,6 +198,60 @@ creation.*
   `getSportIcon()`/`getSportLabel()` in `lib/matches.ts`; `NewMatchPage.tsx`).
   Missing one doesn't error — spectator view just silently falls back to
   `CustomRoom`. No lint rule or test currently catches this.
+- **Cricket's Wicket modal renders duplicate React keys in backyard mode.**
+  `CricketRoom.tsx:1131`'s "Fielded By" select maps
+  `[...battingPlayers, ...bowlingPlayers]`; in backyard mode `battingPlayers`
+  is every roster player and `bowlingPlayers` is every player except the two
+  current batters, so any non-batting player appears in both arrays with the
+  same `key={p.id}`. Found 2026-08-02 as a console warning during browser
+  QA of two unrelated `CricketRoom.tsx` fixes (the pause-guard gap on
+  `handleDelivery`/`handleWicket`/`completeOverEarly`, and run-outs no
+  longer crediting the bowler a wicket) — no visible UI breakage observed,
+  not fixed as part of that pass since it's unrelated to the scoring bugs
+  being addressed. Fix is likely deduping the combined list by `id` before
+  mapping.
+- **`CricketRoom.tsx`'s `switchInnings` ("Innings →") has no internal
+  `canInteract` guard**, the same bug class fixed in `handleDelivery`/
+  `handleWicket`/`completeOverEarly` on 2026-08-02 (see fix-history.md) —
+  only the JSX hides the button when the match isn't active. Missed in that
+  pass because the audit that found it was scoped to the scoring handlers;
+  found 2026-08-02 while building the classic-cricket target-chase
+  completion test fixture. Same fix shape: add
+  `|| isSpectator || !canInteract` to its early-return guard.
+- **Cricket's "Undo Ball" can't cleanly reverse `completeOverEarly`'s
+  auto-dot balls.** As of the 2026-08-02 targeted-reversal fix (see
+  fix-history.md), `handleUndo` inverts a normal delivery/wicket exactly
+  using breadcrumbs stored in `event_data`. `completeOverEarly` (pausing
+  early on a bowler/batter change mid-over) instead bulk-inserts one
+  `match_events` row per remaining ball but applies their combined stat
+  effect (`bowl_balls`/`bowl_dots` for the whole remainder) as a single
+  batch write — so a single `auto_dot` event has no per-event delta to
+  invert. `handleUndo` detects `event_data.auto_dot` and skips the
+  stat-reversal step for these (only the ticker entry itself gets marked
+  undone), which reproduces today's pre-existing gap rather than fixing it.
+  A real fix would mean writing `completeOverEarly`'s bulk insert as
+  per-ball stat updates instead of one batch, which changes its
+  perf/round-trip shape - deferred rather than bundled into the undo fix.
+- **Practice-mode classic cricket creates a match with a broken (missing
+  Team 2) roster.** `NewMatchPage.tsx:196-197` forces `isTeam = false` for
+  any practice match ("individual format... to allow flexible multi-player
+  'nets'"), which switches the roster step to the single-list
+  `individualPlayers` UI instead of the `team1Players`/`team2Players`
+  pickers. But `NewMatchPage.tsx:321`'s match-creation logic unconditionally
+  creates two `match_teams` rows and populates them from `team1Players`/
+  `team2Players` whenever `selectedSport === 'cricket' && cricketVariant
+  === 'classic'`, regardless of `isTeam` — so a practice classic-cricket
+  match always gets two empty teams, and every added player lands in
+  neither (confirmed 2026-08-02 via two live practice test matches, room
+  codes `15598993`/`20D17F13`: only the host ended up in `match_players`,
+  on Team 1, with zero rows for Team 2, even though a second player had
+  been added through the "Player Pool" UI). Found while building an undo
+  test fixture, not fixed as part of that pass since it's a `NewMatchPage`
+  roster-creation bug, unrelated to `CricketRoom.tsx`'s scoring/undo logic.
+  Fix is likely either exempting cricket-classic from the practice-mode
+  `isTeam` override, or making the team-creation branch at line 321 read
+  from `individualPlayers` (split some way) when `team1Players`/
+  `team2Players` are both empty.
 
 ## Future features
 
@@ -252,4 +306,36 @@ creation.*
   needs secret per-player ball assignment and call-shot elimination, a
   different enough mechanic from `16_ball`/`8_ball` that it warrants its own
   design pass rather than forcing it into the shared `poolEngine.ts` reducer.
+- **Backyard cricket: toggle to turn Max Overs / Max Wickets off entirely.**
+  Today `NewMatchPage.tsx:860` hides the Max Overs/Max Wickets `RuleNumber`
+  inputs outright whenever `cricketVariant === 'backyard'`, so
+  `houseRules.max_overs`/`max_wickets` are always `undefined` for a backyard
+  match and `CricketRoom.tsx`'s `handleDelivery` end-of-innings check
+  (`houseRules.max_overs && innings.balls >= houseRules.max_overs * 6`, same
+  shape for wickets, around `CricketRoom.tsx:249-256`) never fires — so
+  backyard games already never auto-end on overs/wickets, but there's no way
+  to opt back *into* a cap either, and no visible affordance either way. Add
+  the fields back for backyard with an explicit on/off toggle per limit
+  (mirroring `RuleToggle`'s pattern elsewhere in `NewMatchPage.tsx`) rather
+  than a bare number input, defaulting off so a casual backyard session keeps
+  evolving indefinitely by default, while a group that wants a defined game
+  (e.g. "10 overs each") can still switch it on and set a number.
+- **Cricket: career 50s/100s counters are done**
+  (`20260801223517_cricket_career_fifties_centuries.sql`, 2026-08-02) — the
+  same shape as the Pool analytics additions above. `scored_fifty`/
+  `scored_century` were already being written per-innings by
+  `CricketRoom.tsx`'s `handleDelivery` on every milestone, but nothing ever
+  read them back. `cricket_metrics` in `player_career_analytics` now sums
+  `scored_fifty AND NOT scored_century` as `cricket_fifties` (exclusive of
+  centuries, standard scorecard convention — a century also flips
+  `scored_fifty` true in `CricketRoom.tsx`, so a naive sum would double-count
+  every century as a fifty too) and `scored_century` as `cricket_centuries`,
+  surfaced as `total_cricket_fifties`/`total_cricket_centuries`.
+  `ProfilePage.tsx`'s cricket Advanced Analytics tile gained a "50s"/"100s"
+  row, and the Compare Modal's cricket section gained matching comparison
+  rows. Verified via a synthetic `execute_sql` transaction (one profile with
+  a fifty-only innings and a separate century innings), always rolled back —
+  confirmed the century wasn't double-counted as a fifty and confirmed zero
+  retroactive impact on real data. See `STATS_AUDIT_LOG.md`'s Cricket section
+  for the full calculation write-up.
 - _Nothing else planned yet — add here as ideas come up._

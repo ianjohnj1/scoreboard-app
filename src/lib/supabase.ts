@@ -147,6 +147,11 @@ export type PlayerCareerAnalytics = {
   total_cricket_dots_bowled: number;
   economy_rate: number;
   bowling_strike_rate: number;
+  // scored_fifty/scored_century are per-innings flags; total_cricket_fifties
+  // is exclusive of centuries (standard scorecard convention), so a 100 is
+  // never also counted as a 50 - see the migration for the exact SQL.
+  total_cricket_fifties: number;
+  total_cricket_centuries: number;
   // Chip Off stats
   total_chip_off_points: number;
   total_chip_off_chips: number;

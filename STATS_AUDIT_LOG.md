@@ -33,6 +33,14 @@
   * Exact Live Calculation: `total_cricket_balls_bowled / total_cricket_wickets_taken`
   * Web Storage Mechanism: computed live by the `player_career_analytics` Postgres view from `cricket_player_stats`
 
+* **50s (Career Fifties)**
+  * Exact Live Calculation: count of `cricket_player_stats` rows (one per innings batted) where `scored_fifty` is true and `scored_century` is false. Deliberately exclusive of centuries — standard cricket scorecard convention, and necessary here since `CricketRoom.tsx` also flips `scored_fifty` true the moment `scored_century` is set, so a naive count of `scored_fifty` alone would double-count every century as a fifty too.
+  * Web Storage Mechanism: `scored_fifty`/`scored_century` are written per-innings by `CricketRoom.tsx`'s `handleDelivery` the moment a batter's cumulative `bat_runs` crosses 50/100; aggregated into a career count by the `player_career_analytics` Postgres view (`20260801223517_cricket_career_fifties_centuries.sql`)
+
+* **100s (Career Centuries)**
+  * Exact Live Calculation: count of `cricket_player_stats` rows where `scored_century` is true
+  * Web Storage Mechanism: same as above
+
 ---
 
 ## Chip Off (Golf Variant)

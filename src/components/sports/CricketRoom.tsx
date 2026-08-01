@@ -192,7 +192,12 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cricket_innings', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cricket_player_stats', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'match_events', filter: `match_id=eq.${match.id}` }, () => handleRefresh())
-      .subscribe();
+      // Resync on (re)connect, same as useMatchEvents - fires on first
+      // connect and again on reconnect, so a signal missed while this
+      // device was briefly disconnected can't leave the view stale.
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') handleRefresh();
+      });
     return () => { 
       supabase.removeChannel(channel);
       if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
@@ -238,7 +243,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   };
 
   const handleDelivery = async (runs: number, extra?: 'wide' | 'noball' | 'bye' | 'legbye') => {
-    if (!innings || !currentBatter1 || loading) return;
+    if (!innings || !currentBatter1 || loading || isSpectator || !canInteract) return;
 
     // Check match end
     if (houseRules.max_overs && innings.balls >= houseRules.max_overs * 6) {
@@ -344,13 +349,29 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         }).eq('id', bowlerStatId);
       }
 
-      // Record event
-      await recordEvent(match.id, 'delivery', { 
-        runs, 
+      // Record event. counts_as_ball/swapped/batter_runs_added are recorded
+      // (not just derived) so handleUndo can invert this exact write without
+      // re-deriving the house-rules/strike-rotation logic a second time -
+      // see handleUndo's comment for why.
+      await recordEvent(match.id, 'delivery', {
+        runs,
         extra: extra || null,
-        bowler_id: currentBowler?.id || null
+        bowler_id: currentBowler?.id || null,
+        counts_as_ball: countsAsBall,
+        swapped: shouldSwap,
+        batter_runs_added: batterRuns,
       }, currentBatter1.id, undefined, currentUser?.id);
       
+      // Chase complete: in classic (two-innings) cricket, the match ends the
+      // moment the batting side reaches its target - it doesn't play out the
+      // rest of the over/innings once that happens. Backyard mode has no
+      // concept of a target-driven "win by chasing" finish, so this is
+      // scoped to classic only.
+      if (!ctx.isBackyard && innings.target_runs != null && (innings.total_runs + runs) >= innings.target_runs) {
+        await handleCompleteMatch();
+        return;
+      }
+
       // Check for over completion
       if (countsAsBall && (innings.balls + 1) % 6 === 0) {
         setShowBowlerModal(true);
@@ -365,7 +386,7 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
   };
 
   const handleWicket = async () => {
-    if (!innings || !currentBatter1 || !currentBowler || loading) return;
+    if (!innings || !currentBatter1 || !currentBowler || loading || isSpectator || !canInteract) return;
     setLoading(true);
     try {
       const statId = await getOrCreatePlayerStat(currentBatter1.id, innings.id);
@@ -379,11 +400,13 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         bat_balls: (stat?.bat_balls || 0) + 1,
       }).eq('id', statId);
 
-      // Update bowler
+      // Update bowler. A run out is never credited to the bowler's wicket
+      // tally in cricket scoring, even though it still counts as a ball faced.
       const bowlerStatId = await getOrCreatePlayerStat(currentBowler.id, innings.id);
       const bowlerStat = playerStats.get(currentBowler.id);
+      const creditsBowler = wicketData.method !== 'Run Out';
       await supabase.from('cricket_player_stats').update({
-        bowl_wickets: (bowlerStat?.bowl_wickets || 0) + 1,
+        bowl_wickets: (bowlerStat?.bowl_wickets || 0) + (creditsBowler ? 1 : 0),
         bowl_balls: (bowlerStat?.bowl_balls || 0) + 1,
       }).eq('id', bowlerStatId);
 
@@ -425,7 +448,15 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
         current_batter2_id: nextBatter2Id,
       }).eq('id', innings.id);
 
-      await recordEvent(match.id, 'wicket', { method: wicketData.method, dismissedBy: wicketData.dismissedBy }, currentBatter1.id, undefined, currentUser?.id);
+      // bowler_id/prev_batter2_id are recorded so handleUndo can restore the
+      // exact pre-wicket bowler credit and crease occupants without
+      // re-deriving them from current state.
+      await recordEvent(match.id, 'wicket', {
+        method: wicketData.method,
+        dismissedBy: wicketData.dismissedBy,
+        bowler_id: currentBowler.id,
+        prev_batter2_id: innings.current_batter2_id,
+      }, currentBatter1.id, undefined, currentUser?.id);
       setShowWicketModal(false);
       setWicketData({ method: 'Bowled', dismissedBy: '', fieldedBy: '' });
       await loadInnings();
@@ -434,14 +465,152 @@ export default function CricketRoom({ ctx }: { ctx: MatchContext }) {
     }
   };
 
+  // Targeted reversal, not a full event-replay engine: cricket's live state
+  // is written directly to cricket_innings/cricket_player_stats (see
+  // CLAUDE.md's "Matches are event-sourced" section), so undo can't just
+  // flip is_undone the way ChipOffRoom/PoolRoom do - it has to apply the
+  // exact inverse of whatever the last delivery/wicket wrote. Reads its
+  // inputs from event_data (counts_as_ball/swapped/batter_runs_added on
+  // delivery; bowler_id/prev_batter2_id on wicket) rather than re-deriving
+  // them from current state, so it can't drift from the forward-path logic.
+  const undoDelivery = async (event: MatchEvent) => {
+    if (!innings || !event.player_id) return;
+    const data = event.event_data as {
+      runs?: number; extra?: string | null; bowler_id?: string | null;
+      counts_as_ball?: boolean; swapped?: boolean; batter_runs_added?: number;
+    };
+    const runs = data.runs || 0;
+    const extra = data.extra || null;
+    const countsAsBall = !!data.counts_as_ball;
+    const batterRunsAdded = data.batter_runs_added || 0;
+    const batterId = event.player_id;
+
+    const inningsUpdate: Record<string, number | string | null> = {
+      total_runs: innings.total_runs - runs,
+      updated_at: new Date().toISOString(),
+    };
+    if (countsAsBall) inningsUpdate.balls = innings.balls - 1;
+    if (extra === 'wide') inningsUpdate.extras_wide = (innings.extras_wide || 0) - runs;
+    else if (extra === 'noball') inningsUpdate.extras_noball = (innings.extras_noball || 0) - 1;
+    else if (extra === 'bye') inningsUpdate.extras_bye = (innings.extras_bye || 0) - runs;
+    else if (extra === 'legbye') inningsUpdate.extras_legbye = (innings.extras_legbye || 0) - runs;
+    if (data.swapped) {
+      inningsUpdate.current_batter1_id = innings.current_batter2_id;
+      inningsUpdate.current_batter2_id = innings.current_batter1_id;
+    }
+    await supabase.from('cricket_innings').update(inningsUpdate).eq('id', innings.id);
+
+    const stat = playerStats.get(batterId);
+    if (stat) {
+      const newRuns = (stat.bat_runs || 0) - batterRunsAdded;
+      const isExtra = !!extra;
+      const batterUpdate: Record<string, number | boolean> = {
+        bat_runs: newRuns,
+        bat_balls: (stat.bat_balls || 0) - (countsAsBall ? 1 : 0),
+        scored_fifty: newRuns >= 50,
+        scored_century: newRuns >= 100,
+      };
+      if (!isExtra) {
+        if (runs === 0) batterUpdate.bat_dots = (stat.bat_dots || 0) - 1;
+        else if (runs === 1) batterUpdate.bat_ones = (stat.bat_ones || 0) - 1;
+        else if (runs === 2) batterUpdate.bat_twos = (stat.bat_twos || 0) - 1;
+        else if (runs === 3) batterUpdate.bat_threes = (stat.bat_threes || 0) - 1;
+        else if (runs === 4) batterUpdate.bat_fours = (stat.bat_fours || 0) - 1;
+        else if (runs === 5) batterUpdate.bat_fives = (stat.bat_fives || 0) - 1;
+        else if (runs === 6) batterUpdate.bat_sixes = (stat.bat_sixes || 0) - 1;
+      }
+      await supabase.from('cricket_player_stats').update(batterUpdate).eq('id', stat.id);
+    }
+
+    // Mirrors handleDelivery: bowler figures are only touched when this ball
+    // counted, so reversal only applies under the same condition.
+    if (data.bowler_id && countsAsBall) {
+      const bowlerStat = playerStats.get(data.bowler_id);
+      if (bowlerStat) {
+        await supabase.from('cricket_player_stats').update({
+          bowl_balls: (bowlerStat.bowl_balls || 0) - 1,
+          bowl_runs: (bowlerStat.bowl_runs || 0) - runs - (extra === 'wide' || extra === 'noball' ? 1 : 0),
+          bowl_dots: (bowlerStat.bowl_dots || 0) - (runs === 0 && !extra ? 1 : 0),
+        }).eq('id', bowlerStat.id);
+      }
+    }
+  };
+
+  const undoWicket = async (event: MatchEvent) => {
+    if (!innings || !event.player_id) return;
+    const data = event.event_data as { method?: string; bowler_id?: string | null; prev_batter2_id?: string | null };
+    const batterId = event.player_id;
+
+    const stat = playerStats.get(batterId);
+    if (stat) {
+      await supabase.from('cricket_player_stats').update({
+        bat_dismissed: false,
+        bat_dismissal_method: null,
+        bat_dismissed_by: null,
+        bat_fielded_by: null,
+        bat_balls: (stat.bat_balls || 0) - 1,
+      }).eq('id', stat.id);
+    }
+
+    if (data.bowler_id) {
+      const bowlerStat = playerStats.get(data.bowler_id);
+      if (bowlerStat) {
+        const creditedBowler = data.method !== 'Run Out';
+        await supabase.from('cricket_player_stats').update({
+          bowl_wickets: (bowlerStat.bowl_wickets || 0) - (creditedBowler ? 1 : 0),
+          bowl_balls: (bowlerStat.bowl_balls || 0) - 1,
+        }).eq('id', bowlerStat.id);
+      }
+    }
+
+    // Backyard never populates batter2 (single-batter rotation), so it stays
+    // null; classic restores whoever was the non-striker before the wicket.
+    await supabase.from('cricket_innings').update({
+      wickets: innings.wickets - 1,
+      balls: innings.balls - 1,
+      current_batter1_id: batterId,
+      current_batter2_id: ctx.isBackyard ? null : (data.prev_batter2_id ?? null),
+    }).eq('id', innings.id);
+  };
+
   const handleUndo = async () => {
-    await undoLastEvent(match.id);
-    // Reload innings from scratch by replaying events would be complex; for now refresh
-    await loadInnings();
+    if (!innings || loading || isSpectator || !canInteract) return;
+    setLoading(true);
+    try {
+      const { data: lastEvent, error } = await supabase
+        .from('match_events')
+        .select('*')
+        .eq('match_id', match.id)
+        .eq('is_undone', false)
+        .order('sequence_num', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!lastEvent) return;
+
+      if (lastEvent.event_type === 'delivery' && !lastEvent.event_data?.auto_dot) {
+        await undoDelivery(lastEvent);
+      } else if (lastEvent.event_type === 'wicket') {
+        await undoWicket(lastEvent);
+      }
+      // Auto-dot events from completeOverEarly's bulk insert (event_data.auto_dot)
+      // fall through untouched: their stat effect was applied as one batch
+      // update for the whole remainder of the over, not per-event, so a
+      // single event can't be cleanly reversed here - only the ticker entry
+      // itself gets undone below. Documented gap, see todo.md.
+
+      await undoLastEvent(match.id);
+      await loadInnings();
+    } catch (err) {
+      console.error('Error undoing last ball:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const completeOverEarly = async () => {
-    if (!innings || !currentBowler) return;
+    if (!innings || !currentBowler || !canInteract) return;
     const ballsInOver = innings.balls % 6;
     if (ballsInOver === 0) return;
 

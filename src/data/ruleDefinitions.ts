@@ -33,18 +33,18 @@ export const RULE_DEFINITIONS: Record<RuleContextKey, Record<string, RuleDefinit
     },
     no_noballs: {
       label: 'No No-Balls Rule',
-      explain: 'Toggle whether no-balls are enforced during scoring.',
+      explain: 'Backyard-only setting - has no effect on Classic matches, where a no-ball always costs an extra ball that must be re-bowled.',
       values: {
-        true: { label: 'On', explain: 'No-balls are tracked and penalized.' },
-        false: { label: 'Off', explain: 'No-ball infractions are ignored.' },
+        true: { label: 'On', explain: 'No effect in Classic mode.' },
+        false: { label: 'Off', explain: 'No effect in Classic mode - a no-ball always costs an extra ball here.' },
       },
     },
     no_wides: {
       label: 'No Wide Rule',
-      explain: 'Toggle whether wide deliveries are enforced during scoring.',
+      explain: 'Backyard-only setting - has no effect on Classic matches, where a wide always costs an extra ball that must be re-bowled.',
       values: {
-        true: { label: 'On', explain: 'Wides are tracked and penalized.' },
-        false: { label: 'Off', explain: 'Wide balls are ignored.' },
+        true: { label: 'On', explain: 'No effect in Classic mode.' },
+        false: { label: 'Off', explain: 'No effect in Classic mode - a wide always costs an extra ball here.' },
       },
     },
     max_overs: {
@@ -66,18 +66,18 @@ export const RULE_DEFINITIONS: Record<RuleContextKey, Record<string, RuleDefinit
     },
     no_noballs: {
       label: 'No No-Balls Rule',
-      explain: 'Toggle whether no-balls are enforced during scoring.',
+      explain: 'When on, a no-ball still counts toward the over instead of needing to be re-bowled (the run penalty still applies either way).',
       values: {
-        true: { label: 'On', explain: 'No-balls are tracked and penalized.' },
-        false: { label: 'Off', explain: 'No-ball infractions are ignored.' },
+        true: { label: 'On', explain: "No-balls don't cost an extra ball - the delivery counts toward the over." },
+        false: { label: 'Off', explain: 'No-balls are enforced as in standard cricket - the bowler must send down another delivery.' },
       },
     },
     no_wides: {
       label: 'No Wide Rule',
-      explain: 'Toggle whether wide deliveries are enforced during scoring.',
+      explain: 'When on, a wide still counts toward the over instead of needing to be re-bowled (the run penalty still applies either way).',
       values: {
-        true: { label: 'On', explain: 'Wides are tracked and penalized.' },
-        false: { label: 'Off', explain: 'Wide balls are ignored.' },
+        true: { label: 'On', explain: "Wides don't cost an extra ball - the delivery counts toward the over." },
+        false: { label: 'Off', explain: 'Wides are enforced as in standard cricket - the bowler must send down another delivery.' },
       },
     },
   },

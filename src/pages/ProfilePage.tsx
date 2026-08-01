@@ -435,6 +435,16 @@ export default function ProfilePage() {
                           <p className="text-charcoal-100 font-bold font-mono">{s.boundary_percentage.toFixed(1)}%</p>
                         </div>
                       </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="stat-card bg-accent-950/20 border-accent-900/30">
+                          <p className="text-accent-500 text-[10px] uppercase font-bold">50s</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.total_cricket_fifties}</p>
+                        </div>
+                        <div className="stat-card bg-accent-950/20 border-accent-900/30">
+                          <p className="text-accent-500 text-[10px] uppercase font-bold">100s</p>
+                          <p className="text-charcoal-100 font-bold font-mono">{s.total_cricket_centuries}</p>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-3 gap-2">
                         <div className="stat-card bg-success-950/20 border-success-900/30">
                           <p className="text-success-500 text-[10px] uppercase font-bold">Economy</p>
@@ -807,6 +817,8 @@ export default function ProfilePage() {
                         <ComparisonRow label="Economy" val1={mySportStats?.economy_rate} val2={theirSportStats?.economy_rate} format="float" lowerIsBetter />
                         <ComparisonRow label="Dot Ball %" val1={mySportStats?.dot_ball_percentage} val2={theirSportStats?.dot_ball_percentage} format="pct" />
                         <ComparisonRow label="Boundary %" val1={mySportStats?.boundary_percentage} val2={theirSportStats?.boundary_percentage} format="pct" />
+                        <ComparisonRow label="50s" val1={mySportStats?.total_cricket_fifties} val2={theirSportStats?.total_cricket_fifties} />
+                        <ComparisonRow label="100s" val1={mySportStats?.total_cricket_centuries} val2={theirSportStats?.total_cricket_centuries} />
                       </>
                     )}
                     {sport === 'chip_off' && (

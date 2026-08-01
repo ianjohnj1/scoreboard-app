@@ -93,10 +93,13 @@ interface MatchStatsListEntry {
 // Some sports never get an explicit winner from their room's own scoring UI -
 // classic golf has no win-condition button at all, and any match can be ended
 // early via the generic "End & Lock" header action before its room's own win
-// condition fires. This backfills winner_profile_id from raw scores when it's
-// still missing at completion time. There's no career-stats cache to touch
-// any more - player_career_stats was dropped 2026-07-30 (dead table, see
-// supabase/migrations/20260730030956_drop_dead_player_career_stats_table.sql).
+// condition fires - cricket has this same gap when max_overs/max_wickets
+// house rules are unset, or a "Innings 2" chase is cut short before either
+// the wicket/over limit or a target-reached completion (CricketRoom.tsx)
+// fires. This backfills winner_profile_id/winner_team_id from raw scores
+// when it's still missing at completion time. There's no career-stats cache
+// to touch any more - player_career_stats was dropped 2026-07-30 (dead
+// table, see supabase/migrations/20260730030956_drop_dead_player_career_stats_table.sql).
 export async function determineAndSaveWinnerIfMissing(matchId: string): Promise<void> {
   const { data: match, error: matchError } = await supabase
     .from('match_rooms')
@@ -107,7 +110,75 @@ export async function determineAndSaveWinnerIfMissing(matchId: string): Promise<
   if (matchError || !match) throw matchError || new Error('Match not found');
   if (match.is_practice) return;
   if (match.winner_profile_id || match.winner_team_id) return;
-  if (match.sport !== 'golf') return;
+  if (match.sport !== 'golf' && match.sport !== 'cricket') return;
+
+  if (match.sport === 'cricket') {
+    const cricketHouseRules = match.house_rules as { variant?: string } | null;
+
+    if (cricketHouseRules?.variant === 'backyard') {
+      // Best-effort, same spirit as classic golf below: most total runs
+      // across every innings this player batted in wins. Deliberately
+      // recomputed from cricket_player_stats directly rather than reusing
+      // CricketRoom's own in-room backyard winner logic, which only ever
+      // sees the currently-loaded (latest) innings' stats map.
+      const { data: cricketStats } = await supabase
+        .from('cricket_player_stats')
+        .select('profile_id, bat_runs')
+        .eq('match_id', matchId);
+
+      const runsByPlayer = new Map<string, number>();
+      (cricketStats || []).forEach(s => {
+        runsByPlayer.set(s.profile_id, (runsByPlayer.get(s.profile_id) || 0) + (s.bat_runs || 0));
+      });
+
+      let winnerProfileId: string | null = null;
+      let maxRuns = -1;
+      runsByPlayer.forEach((runs, profileId) => {
+        if (runs > maxRuns) {
+          maxRuns = runs;
+          winnerProfileId = profileId;
+        }
+      });
+
+      if (winnerProfileId) {
+        await supabase.from('match_rooms').update({ winner_profile_id: winnerProfileId }).eq('id', matchId);
+      }
+      return;
+    }
+
+    // Classic: sum each team's total_runs across every innings they batted
+    // (normally one each). A team that never got to bat has no row at all,
+    // not a zero - it loses to whichever side has any runs on the board,
+    // same "best effort from whatever's there" spirit as golf's fallback.
+    const { data: cricketInnings } = await supabase
+      .from('cricket_innings')
+      .select('batting_team_id, total_runs')
+      .eq('match_id', matchId);
+
+    const runsByTeam = new Map<string, number>();
+    (cricketInnings || []).forEach(inn => {
+      if (!inn.batting_team_id) return;
+      runsByTeam.set(inn.batting_team_id, (runsByTeam.get(inn.batting_team_id) || 0) + (inn.total_runs || 0));
+    });
+
+    let winnerTeamId: string | null = null;
+    let maxTeamRuns = -1;
+    let tied = false;
+    runsByTeam.forEach((runs, teamId) => {
+      if (runs > maxTeamRuns) {
+        maxTeamRuns = runs;
+        winnerTeamId = teamId;
+        tied = false;
+      } else if (runs === maxTeamRuns) {
+        tied = true;
+      }
+    });
+
+    if (winnerTeamId && !tied) {
+      await supabase.from('match_rooms').update({ winner_team_id: winnerTeamId }).eq('id', matchId);
+    }
+    return;
+  }
 
   const houseRules = match.house_rules as { variant?: string; team_play?: boolean } | null;
   const isChipOff = houseRules?.variant === 'chip_off';
