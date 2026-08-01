@@ -4,7 +4,7 @@
 - **Local Storage**: Not used for stats. `localStorage` is only used for authentication tokens (`sk_user` and `sk_session_id`).
 - **Live State**: Managed via React Component State (e.g., `DartsRuntimeState`, `playerMap`) and Contexts.
 - **Persistence**: Raw events go into `match_events` (append-only), with cricket and golf additionally normalized into `cricket_player_stats` / `golf_scores`. Nothing computed from them is written back anywhere — there is no career-stats cache table. Two independent pipelines re-derive everything live, on every read, straight from those raw tables:
-  1. `getGlobalLeaderboardData()` in `src/lib/stats.ts` — powers the global leaderboard. Pulls `match_rooms` (`status = 'completed'`) + `match_players` + `match_events` + `cricket_player_stats` + `profiles`, and re-derives lifetime counters, `extra_stats` (per-sport raw counts), and `season_points` in one `event_type` switch, in memory, per request.
+  1. `getGlobalLeaderboardData()` in `src/lib/stats.ts` — powers the global leaderboard. Pulls `match_rooms` (`status = 'completed'`) + the `leaderboard_match_player_scores` view + `profiles`, and re-derives lifetime counters and `season_points` in memory, per request. Until the 2026-07-30 P0 perf rewrite it instead pulled `match_players`/`match_events`/`cricket_player_stats` directly and derived a per-sport raw-count `extra_stats` field via an in-memory `event_type` switch; that field was dropped outright (nothing read it) — see the Darts section below.
   2. The Postgres views `player_career_analytics` and `fan_engagement_stats` — power derived/rate analytics (strike rate, checkout %, scoring efficiency, …) read directly by `ProfilePage`, `LeaderboardPage`, and `PvPRoom`. Recomputed on every `SELECT`, straight from `match_events`/`cricket_player_stats`/`match_players`/`match_rooms` — not from `getGlobalLeaderboardData()`'s output.
   
   A table called `player_career_stats` used to sit downstream of the client as a write-through cache; the client stopped writing to it 2026-07-29 and nothing ever read it back, so it was dropped outright 2026-07-30 (`supabase/migrations/20260730030956_drop_dead_player_career_stats_table.sql`). Any reference to it below in an older version of this doc was stale.
@@ -59,41 +59,41 @@
 
 * **Career Holed %**
   * Exact Live Calculation: `(holed_putts_total / total_putt_attempts) * 100`
-  * Web Storage Mechanism: computed live by the `player_career_analytics` Postgres view from `match_events` (types: `putt_attempt`, `tiebreak_result`)
+  * Web Storage Mechanism: computed live by the `player_career_analytics` Postgres view from `match_events` (type: `putt_attempt`)
+
+* **Clutch Putts**
+  * Exact Live Calculation: `COUNT(*)` of the player's own `tiebreak_result` events for the match
+  * Web Storage Mechanism: computed live by the `player_career_analytics` Postgres view from `match_events` (type: `tiebreak_result`)
+
+---
+
+## Pool (16 Ball / 8 Ball)
+
+* **Matches Played / Won / Lost**
+  * Exact Live Calculation: incremented per completed match from `match_rooms.winner_profile_id`/`winner_team_id` (set by `PoolRoom.tsx` calling `completeMatchWithWinner`/`completeMatchWithTeamWinner` on a legal or illegal-black finish) — same generic mechanism every sport uses, not pool-specific.
+  * Web Storage Mechanism: in-memory only, recomputed by `getGlobalLeaderboardData()` in `src/lib/stats.ts` on every leaderboard load.
+
+* **Season Points (placement contribution)**
+  * Exact Live Calculation: `match_event_points()` scores `pool_ball_potted` as 1 point when `event_data.own_ball` is `true` (0 otherwise), `pool_game_won` as a flat 7-point winner bonus, `pool_miss`/`pool_foul` as 0. Summed per player into the `points` column, which `getGlobalLeaderboardData()` uses as the ranking `score` for placement (100/50/25/10 via `calculatePlacementSP`) — same as every non-cricket/non-golf sport. No pool-specific milestone bonus exists.
+  * Web Storage Mechanism: computed live by `match_event_points()` + the `leaderboard_match_player_scores` view's `points` column (`supabase/migrations/20260801124346_score_pool_ball_tracking_events.sql`), read into memory by `getGlobalLeaderboardData()`.
+
+**Not yet implemented** — discussed as ideas, no code path exists for any of these. Would each need either a new column on `leaderboard_match_player_scores` (or a dedicated view) and `GlobalPlayerStats` wiring, or in some cases a new persisted event — see `todo.md`'s "Pool: leaderboard/season-points wiring" future-features item:
+
+* **Win % when Bigs vs Win % when Smalls** — needs group assignment (currently derived only client-side, in-match, via `ballGroupOf()` in `poolEngine.ts`; not persisted or joinable against match outcome across history) plus a SQL aggregate or a dedicated `pool_group_assigned`-style event.
+* **Win % when broke first** — the breaker is definitionally whoever the first recorded event in the match belongs to (side 0 / lineup slot 0 at game creation), so no new event is needed, but nothing currently reads or aggregates it.
+* **Fouls (times potted the white)** — raw count of `pool_foul` events per player exists in `match_events` today; no aggregate column or UI surfaces it.
+* **Pot Streak (most potted in one turn)** — `poolEngine.ts`'s `longestStreakBySide` computes this live, in-match, for the win-screen summary card only; nothing persists it or aggregates it across matches.
+* **Average Shots per Pot** — would be `(pool_ball_potted + pool_miss + pool_foul) / pool_ball_potted` per player, aggregated across matches; no such column exists.
+* **Wire-to-wire clean run** (won without ever missing or fouling) — derivable per-match from the winner having zero `pool_miss`/`pool_foul` events, but not currently checked or counted anywhere.
+* **Bigs/Smalls assignment count** — same blocker as the win-% version above; no persisted group-assignment fact to tally.
+* **Shortest game (fewest total shots to win)** — derivable from the completed match's event count, but no query or UI does this today.
 
 ---
 
 ## Darts
 
-Two separate pipelines cover darts, for two separate surfaces:
+Only one live pipeline covers darts today:
 
-* **Raw per-throw counts** (`darts_thrown`, `checkouts`, `double_out_finishes`, ATW/Killer attempt & success counts) are re-derived by `getGlobalLeaderboardData()` in `src/lib/stats.ts` on every leaderboard load, from `match_events`, and returned as the in-memory `extra_stats` field on each player's `GlobalPlayerStats` — nothing is persisted.
-* **Derived rate stats** (`countdown_ppr`, `first_nine_ppr`, `checkout_pct`, `atw_efficiency`, `killer_lethality`, `killer_survival`) are computed live by the `player_career_analytics` Postgres view, read by `ProfilePage`.
+* **Derived rate stats** (`countdown_ppr`, `first_nine_ppr`, `checkout_pct`, `atw_efficiency`, `killer_lethality`, `killer_survival`) are computed live by the `player_career_analytics` Postgres view from `match_events`, read by `ProfilePage`.
 
-* **Total Darts Thrown**
-  * Exact Live Calculation: `eventData.darts.length` (Summed up over all `darts_turn` / `darts_throw` events)
-  * Web Storage Mechanism: `match_events` -> `getGlobalLeaderboardData()` in `stats.ts` (in-memory `extra_stats`, not persisted)
-
-* **Checkout / Double Out Finishes**
-  * Exact Live Calculation: Increments by `1` if `e.event_data.throw?.ring === 'double'` or `'double_bull'` upon `darts_win`
-  * Web Storage Mechanism: `match_events` -> `getGlobalLeaderboardData()` in `stats.ts` (in-memory `extra_stats`)
-
-* **Around The World - Advances**
-  * Exact Live Calculation: `e.event_data.advanced_by` (Usually `1`, or multiplier value if 'Skip Ahead' is enabled)
-  * Web Storage Mechanism: `match_events` (type: `darts_atw_throw`) -> `getGlobalLeaderboardData()` in `stats.ts` (in-memory `extra_stats`)
-
-* **Around The World - Successful Hits**
-  * Exact Live Calculation: Increments by `1` if `e.event_data.hit_target === true`
-  * Web Storage Mechanism: `match_events` (type: `darts_atw_throw`) -> `getGlobalLeaderboardData()` in `stats.ts` (in-memory `extra_stats`)
-
-* **Killer - Activations**
-  * Exact Live Calculation: Increments by `1` if `e.event_data.activated === true`
-  * Web Storage Mechanism: `match_events` (type: `darts_killer_throw`) -> `getGlobalLeaderboardData()` in `stats.ts` (in-memory `extra_stats`)
-
-* **Killer - Opponent Lives Removed**
-  * Exact Live Calculation: Increments by `1` if `e.event_data.hit_opponent_id` is truthy
-  * Web Storage Mechanism: `match_events` (type: `darts_killer_throw`) -> `getGlobalLeaderboardData()` in `stats.ts` (in-memory `extra_stats`)
-
-* **Killer - Eliminations Secured**
-  * Exact Live Calculation: `e.event_data.eliminated_player_ids.length` (excluding self)
-  * Web Storage Mechanism: `match_events` (type: `darts_killer_throw`) -> `getGlobalLeaderboardData()` in `stats.ts` (in-memory `extra_stats`)
+**Dropped, not just relocated:** earlier versions of this doc also listed a second pipeline — raw per-throw counts (`darts_thrown`, `checkouts`/double-out finishes, ATW advances/successful hits, Killer activations/opponent-lives-removed/eliminations-secured) re-derived by `getGlobalLeaderboardData()` into an in-memory `extra_stats` field. That field no longer exists: the 2026-07-30 P0 perf rewrite replaced `getGlobalLeaderboardData()`'s direct `match_events`/`match_players`/`cricket_player_stats` reads and `event_type` switch with the pre-reduced `leaderboard_match_player_scores` view (see `src/lib/stats.ts`, `GlobalPlayerStats`). Per the comment there, these counters were "recomputed on every leaderboard load and read by nothing" — `LeaderboardPage` never touched `extra_stats` — so they were cut outright rather than migrated. None of them are rendered anywhere in the current UI; if darts per-throw counters are needed again, they'd need a fresh column on the view or a dedicated query, not a reference to this dropped field.
