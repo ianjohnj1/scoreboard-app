@@ -122,6 +122,7 @@ export default function NewMatchPage() {
   const [guestName, setGuestName] = useState('');
   const [, setAddingGuest] = useState(false);
   const [activeTeamPicker, setActiveTeamPicker] = useState<'team1' | 'team2' | 'individual' | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<Profile[]>([]);
 
   const [, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -212,11 +213,13 @@ export default function NewMatchPage() {
     ...individualPlayers.map(p => p.id),
   ]);
 
-  const addPlayerToGroup = (profile: Profile, target: 'team1' | 'team2' | 'individual') => {
-    if (target === 'team1') setTeam1Players(prev => [...prev, profile]);
-    else if (target === 'team2') setTeam2Players(prev => [...prev, profile]);
-    else setIndividualPlayers(prev => [...prev, profile]);
+  const addPlayersToGroup = (newPlayers: Profile[], target: 'team1' | 'team2' | 'individual') => {
+    if (newPlayers.length === 0) return;
+    if (target === 'team1') setTeam1Players(prev => [...prev, ...newPlayers]);
+    else if (target === 'team2') setTeam2Players(prev => [...prev, ...newPlayers]);
+    else setIndividualPlayers(prev => [...prev, ...newPlayers]);
     setPlayerSearch('');
+    setPendingSelection([]);
     setActiveTeamPicker(null);
   };
 
@@ -224,6 +227,26 @@ export default function NewMatchPage() {
     if (target === 'team1') setTeam1Players(prev => prev.filter(p => p.id !== id));
     else if (target === 'team2') setTeam2Players(prev => prev.filter(p => p.id !== id));
     else setIndividualPlayers(prev => prev.filter(p => p.id !== id));
+  };
+
+  const openTeamPicker = (target: 'team1' | 'team2' | 'individual') => {
+    setPendingSelection([]);
+    setPlayerSearch('');
+    setActiveTeamPicker(target);
+  };
+
+  const closeTeamPicker = () => {
+    setPendingSelection([]);
+    setPlayerSearch('');
+    setActiveTeamPicker(null);
+  };
+
+  const togglePendingSelection = (profile: Profile) => {
+    setPendingSelection(prev =>
+      prev.some(p => p.id === profile.id)
+        ? prev.filter(p => p.id !== profile.id)
+        : [...prev, profile]
+    );
   };
 
   const handleAddGuest = async () => {
@@ -234,7 +257,7 @@ export default function NewMatchPage() {
 
       if (newGuest) {
         setProfiles(prev => [...prev, newGuest]);
-        if (activeTeamPicker) addPlayerToGroup(newGuest, activeTeamPicker);
+        setPendingSelection(prev => [...prev, newGuest]);
         setGuestName('');
       }
     } catch (err) {
@@ -1118,8 +1141,8 @@ export default function NewMatchPage() {
           <div className="space-y-4">
             {isTeam ? (
               <>
-                <TeamPlayerPicker teamName={team1Name} onTeamNameChange={setTeam1Name} teamColor="#3b82f6" players={team1Players} onRemove={(id) => removePlayerFromGroup(id, 'team1')} onAdd={() => setActiveTeamPicker('team1')} />
-                <TeamPlayerPicker teamName={team2Name} onTeamNameChange={setTeam2Name} teamColor="#ef4444" players={team2Players} onRemove={(id) => removePlayerFromGroup(id, 'team2')} onAdd={() => setActiveTeamPicker('team2')} />
+                <TeamPlayerPicker teamName={team1Name} onTeamNameChange={setTeam1Name} teamColor="#3b82f6" players={team1Players} onRemove={(id) => removePlayerFromGroup(id, 'team1')} onAdd={() => openTeamPicker('team1')} />
+                <TeamPlayerPicker teamName={team2Name} onTeamNameChange={setTeam2Name} teamColor="#ef4444" players={team2Players} onRemove={(id) => removePlayerFromGroup(id, 'team2')} onAdd={() => openTeamPicker('team2')} />
                 {(isPuttVsPutt || isChipOffTeamPlay || isPoolTeamPlay) && (
                   <>
                     <LineupOrderBuilder
@@ -1146,7 +1169,7 @@ export default function NewMatchPage() {
                     <User size={16} className="text-accent-400" />
                     Player Pool ({individualPlayers.length})
                   </h3>
-                  <button onClick={() => setActiveTeamPicker('individual')} className="btn-secondary py-1.5 px-3 text-sm flex items-center gap-1">
+                  <button onClick={() => openTeamPicker('individual')} className="btn-secondary py-1.5 px-3 text-sm flex items-center gap-1">
                     <Plus size={14} /> Add Player
                   </button>
                 </div>
@@ -1162,25 +1185,48 @@ export default function NewMatchPage() {
               <div className="fixed inset-0 bg-black/60 z-50 flex items-end">
                 <div className="w-full bg-charcoal-800 rounded-t-2xl p-4 space-y-4 max-h-[80vh] overflow-y-auto">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-charcoal-100">Add Player</h3>
-                    <button onClick={() => setActiveTeamPicker(null)} className="p-1.5 text-charcoal-400"><X size={20} /></button>
+                    <h3 className="font-bold text-charcoal-100">
+                      Add Players{pendingSelection.length > 0 ? ` (${pendingSelection.length} selected)` : ''}
+                    </h3>
+                    <button onClick={closeTeamPicker} className="p-1.5 text-charcoal-400"><X size={20} /></button>
                   </div>
                   <div className="relative">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-charcoal-400" />
                     <input type="text" value={playerSearch} onChange={e => setPlayerSearch(e.target.value)} className="input-field pl-9" placeholder="Search..." autoFocus />
                   </div>
                   <div className="space-y-1">
-                    {filteredProfiles.filter(p => !allSelectedIds.has(p.id)).map(p => (
-                      <button key={p.id} onClick={() => addPlayerToGroup(p, activeTeamPicker!)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-charcoal-700 text-left">
-                        <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
-                        <span className="text-charcoal-100 font-medium text-sm">{p.display_name}</span>
-                      </button>
-                    ))}
+                    {filteredProfiles.filter(p => !allSelectedIds.has(p.id)).map(p => {
+                      const isSelected = pendingSelection.some(sel => sel.id === p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => togglePendingSelection(p)}
+                          className={`w-full flex items-center gap-3 p-3 rounded-xl text-left border transition-colors ${
+                            isSelected ? 'bg-accent-600/20 border-accent-600' : 'border-transparent hover:bg-charcoal-700'
+                          }`}
+                        >
+                          <Avatar name={p.display_name} color={p.avatar_color} size="sm" />
+                          <span className="text-charcoal-100 font-medium text-sm flex-1">{p.display_name}</span>
+                          <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
+                            isSelected ? 'bg-accent-600 border-accent-600' : 'border-charcoal-500'
+                          }`}>
+                            {isSelected && <Check size={14} className="text-white" />}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                   <div className="divider pt-2">
                     <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} className="input-field" placeholder="Guest name" />
                     <button onClick={handleAddGuest} disabled={!guestName.trim()} className="btn-secondary mt-2 w-full py-2">Add Guest</button>
                   </div>
+                  <button
+                    onClick={() => addPlayersToGroup(pendingSelection, activeTeamPicker!)}
+                    disabled={pendingSelection.length === 0}
+                    className="btn-primary w-full py-3 disabled:opacity-40"
+                  >
+                    Add {pendingSelection.length > 0 ? pendingSelection.length : ''} Player{pendingSelection.length === 1 ? '' : 's'}
+                  </button>
                 </div>
               </div>
             )}
